@@ -2,28 +2,28 @@
 # -*- coding: utf-8 -*-
 """
 NEKO HQ (terminal) — Claude CLI kedi kafesi, dogrudan terminalde.
-Warp'ta bir panede `python3 neko_tui.py` (ya da `neko`), baska panede `claude`.
-Her oturum bir kedi olur; calisinca yazar, sessizlikte uyur.
-Arayuzden: ok tuslari ile kedi sec, [n] isim, [c] renk, [h] sapka, [q] cik.
-Yalnizca Python standart kutuphanesi (macOS/Linux/Warp).
+Warp'ta bir panede `neko` (ya da `python3 ~/.neko-hq/neko_tui.py`), digerinde `claude`.
+Her oturum bir kedi olur; calisinca yazar, sessizlikte uyur. Kafasinda rastgele
+sapkalar olur (ara sira degisir). Isim/secim/duzenleme her sey piksel icindedir.
+Tuslar:  <-  ->  kedi sec · n isim · c renk · h sapka · q cik
+Yalnizca Python standart kutuphanesi (macOS/Linux/Warp, truecolor).
 """
-import os, sys, json, time, re, select, argparse, shutil
+import os, sys, json, time, re, select, argparse, shutil, random
 try:
     import termios, tty
     HAVE_TTY=True
 except Exception:
     HAVE_TTY=False
 
-W, H = 200, 60
-COUNTER_Y = 44
+W, H = 220, 48
+COUNTER_Y = 34
 HOME=os.path.expanduser("~"); APP_DIR=os.path.join(HOME,".neko-hq")
 LOG=os.path.join(APP_DIR,"activity.log"); OVR_FILE=os.path.join(APP_DIR,"cats.json")
 SETTINGS=os.path.join(HOME,".claude","settings.json")
 SELF=os.path.abspath(__file__); PY=sys.executable or "python3"; MARK="# neko-hq"
 
 NAMES=["Pamuk","Zeytin","Boncuk","Sansli","Mirnav","Duman","Tarcin","Karamel"]
-HAT_ORDER=["santa","bow","beanie","party","crown","cap","flower","none"]
-HATS=["none","santa","party","bow","beanie","crown","cap","flower"]
+ALL_HATS=["santa","bow","beanie","party","crown","cap","flower","tophat","headphones","wizard","chef","bandana","halo","star"]
 PAL_HEX=[
  {"F":"#f0a64b","d":"#cf7f2c","l":"#ffc878","B":"#fce3c2","I":"#f3a9bb","N":"#e07a92","iris":"#7fb24a","s":"#cf7f2c"},
  {"F":"#9aa3b2","d":"#79839a","l":"#c2cad6","B":"#e6ebf2","I":"#f3a9bb","N":"#d97f96","iris":"#6fae9a","s":"#79839a"},
@@ -32,17 +32,14 @@ PAL_HEX=[
  {"F":"#e7c27a","d":"#b98e44","l":"#f7df9f","B":"#fff7ea","I":"#f3a9bb","N":"#e07a92","iris":"#7faf6a","s":"#9a6b3a"},
  {"F":"#b9897a","d":"#956a5e","l":"#d8b0a3","B":"#f4e7df","I":"#f3a9bb","N":"#d97f96","iris":"#6fae9a","s":"#7a5446"},
 ]
-TOOL_TASKS={"Bash":"terminalde komut","Read":"dosya okuyor","Edit":"kod yaziyor","Write":"kod yaziyor",
- "MultiEdit":"kod duzenliyor","Grep":"kodda ariyor","Glob":"dosya tariyor","WebSearch":"web'de ariyor",
- "WebFetch":"sayfa getiriyor","Task":"alt-ajan acti","TodoWrite":"liste yaziyor"}
-TOOL_SHORT={"Bash":"komut","Read":"okuyor","Edit":"yaziyor","Write":"yaziyor","MultiEdit":"duzenliyor",
+TOOL_TASKS={"Bash":"komut","Read":"okuyor","Edit":"yaziyor","Write":"yaziyor","MultiEdit":"duzenliyor",
  "Grep":"ariyor","Glob":"tariyor","WebSearch":"web","WebFetch":"web","Task":"alt-ajan","TodoWrite":"liste"}
 
 def hx(s):
     s=s.lstrip("#"); return (int(s[0:2],16),int(s[2:4],16),int(s[4:6],16))
 PAL=[{k:(hx(v) if v else None) for k,v in p.items()} for p in PAL_HEX]
 
-OUT=(34,26,18); WHT=(252,252,252); PUP=(20,22,30)
+OUT=(34,26,18); WHT=(252,252,252); PUP=(20,22,30); BLK=(20,18,16)
 WALL=[(247,235,214),(239,225,201),(229,212,186)]
 COUNTER=(150,98,56); COUNTERT=(176,120,72); COUNTERD=(96,60,32); COUNTERE=(70,44,22)
 SIGN=(94,58,30); SIGNL=(122,74,38); SIGNT=(243,220,174)
@@ -52,14 +49,43 @@ CB=(40,52,46); CBF=(110,74,40); CHALK=(244,239,230); CH1=(244,193,208); CH2=(191
 SHELF=(122,80,44); SHELFD=(90,58,32)
 POT=(194,98,47); POTD=(151,67,33); LEAF=(74,165,82); LEAFD=(47,122,52); LEAFL=(98,193,104); VINE=(63,143,68)
 MACH=(211,79,79); MACHD=(168,58,58); CHROME=(201,206,214); CAKE=(247,197,214); CAKEI=(232,154,176); CHERRY=(210,59,84); CREAM=(255,244,234)
+PCASE=(206,228,236); PCASEF=(120,84,48); PIE=(232,178,96); PIEC=(120,72,140); DONUT=(244,170,150)
+CLOCKF=(120,84,48); CLOCKB=(248,243,232); CLOCKH=(60,46,34)
+PIC=(120,84,48); PICB=(250,246,236)
 LAPC=(52,57,74); LAPK=(207,210,216); SCR=(16,35,27); CODE=(123,224,143); CODEB=(111,182,239)
 MUG=(217,83,79); STEAM=(238,246,255)
 F1=(239,138,160); F2=(242,196,99); F3=(143,208,160); F4=(143,191,230); F5=(198,156,224)
-BADGE=(247,236,206); SELC=(255,214,82)
+BADGE=(247,236,206); SELC=(255,214,82); GOLD=(240,200,70)
 
-DIGITS={"1":["010","110","010","010","111"],"2":["111","001","111","100","111"],"3":["111","001","111","001","111"],
-"4":["101","101","111","001","001"],"5":["111","100","111","001","111"],"6":["111","100","111","101","111"],
-"7":["111","001","010","010","010"],"8":["111","101","111","101","111"]}
+FONT={
+"A":["010","101","111","101","101"],"B":["110","101","110","101","110"],"C":["011","100","100","100","011"],
+"D":["110","101","101","101","110"],"E":["111","100","110","100","111"],"F":["111","100","110","100","100"],
+"G":["011","100","101","101","011"],"H":["101","101","111","101","101"],"I":["111","010","010","010","111"],
+"J":["001","001","001","101","010"],"K":["101","101","110","101","101"],"L":["100","100","100","100","111"],
+"M":["101","111","111","101","101"],"N":["101","111","111","111","101"],"O":["010","101","101","101","010"],
+"P":["110","101","110","100","100"],"Q":["010","101","101","110","011"],"R":["110","101","110","101","101"],
+"S":["011","100","010","001","110"],"T":["111","010","010","010","010"],"U":["101","101","101","101","111"],
+"V":["101","101","101","101","010"],"W":["101","101","111","111","101"],"X":["101","101","010","101","101"],
+"Y":["101","101","010","010","010"],"Z":["111","001","010","100","111"],
+"0":["111","101","101","101","111"],"1":["010","110","010","010","111"],"2":["110","001","010","100","111"],
+"3":["111","001","011","001","111"],"4":["101","101","111","001","001"],"5":["111","100","110","001","110"],
+"6":["011","100","110","101","010"],"7":["111","001","010","010","010"],"8":["010","101","010","101","010"],
+"9":["010","101","011","001","110"]," ":["000","000","000","000","000"],
+"-":["000","000","111","000","000"],".":["000","000","000","000","010"],"!":["010","010","010","000","010"],
+}
+TR={"Ç":"C","Ş":"S","İ":"I","Ğ":"G","Ö":"O","Ü":"U","Â":"A","Î":"I","Û":"U"}
+
+def text_w(s): return max(0,len(s)*4-1)
+def draw_text(b,x,y,s,col):
+    cx=x
+    for ch in s.upper():
+        ch=TR.get(ch,ch); g=FONT.get(ch)
+        if g:
+            for r in range(5):
+                row=g[r]
+                for c in range(3):
+                    if row[c]=="1": b.px(cx+c,y+r,1,1,col)
+        cx+=4
 
 class Buf:
     def __init__(s,w,h): s.w=w; s.h=h; s.d=[[(0,0,0) for _ in range(w)] for _ in range(h)]
@@ -82,204 +108,215 @@ def rrect(b,x,y,w,h,fill,out):
         ins=2 if (j==1 or j==h-2) else (1 if (j==2 or j==h-3) else 0)
         b.px(x+1+ins,y+j,w-2-2*ins,1,fill)
 
-def digit(b,x,y,ch,col):
-    g=DIGITS.get(ch)
-    if not g: return
-    for r in range(5):
-        for c in range(3):
-            if g[r][c]=="1": b.px(x+c,y+r,1,1,col)
-
 b_step=0
 
 def cat(b,ox,oy,P,pose,t):
     F,d,l,B,I,N,iris,s=P["F"],P["d"],P["l"],P["B"],P["I"],P["N"],P["iris"],P["s"]
     blink=(t//9)%13==0
-    b.px(ox+4,oy+22,13,1,(70,48,28))
-    # tail
-    b.px(ox+15,oy+15,4,2,OUT); b.px(ox+15,oy+15,3,1,F)
-    b.px(ox+17,oy+10,3,6,OUT); b.px(ox+17,oy+11,2,5,F)
-    b.px(ox+15,oy+8,3,4,OUT);  b.px(ox+15,oy+9,2,3,F)
-    if s: b.px(ox+17,oy+12,2,1,s); b.px(ox+15,oy+9,2,1,s)
-    # body
-    rrect(b,ox+4,oy+14,12,8,F,OUT)
-    b.px(ox+7,oy+16,6,5,B)
-    if s: b.px(ox+5,oy+16,1,5,s); b.px(ox+14,oy+16,1,5,s)
-    # ears
-    b.px(ox+3,oy,3,1,OUT); b.px(ox+2,oy+1,5,1,OUT); b.px(ox+3,oy+1,3,1,F); b.px(ox+3,oy+2,4,2,F); b.px(ox+4,oy+2,2,2,I)
-    b.px(ox+14,oy,3,1,OUT); b.px(ox+13,oy+1,5,1,OUT); b.px(ox+14,oy+1,3,1,F); b.px(ox+13,oy+2,4,2,F); b.px(ox+14,oy+2,2,2,I)
-    # head
-    rrect(b,ox+2,oy+3,16,12,F,OUT)
-    b.px(ox+4,oy+4,12,1,l)
-    b.px(ox+1,oy+9,1,3,F); b.px(ox+18,oy+9,1,3,F)
-    b.px(ox+4,oy+13,12,1,d)
-    if s: b.px(ox+8,oy+4,2,3,s); b.px(ox+5,oy+5,1,2,s); b.px(ox+13,oy+5,1,2,s)
-    # muzzle
-    b.px(ox+5,oy+10,10,4,B)
-    # eyes
-    ey=oy+6; exL=ox+4; exR=ox+11
+    b.px(ox+3,oy+16,11,1,(70,48,28))
+    b.px(ox+12,oy+11,3,2,OUT); b.px(ox+12,oy+11,2,1,F); b.px(ox+13,oy+8,2,4,OUT); b.px(ox+13,oy+9,1,3,F)
+    if s: b.px(ox+13,oy+9,1,1,s)
+    rrect(b,ox+3,oy+9,10,7,F,OUT); b.px(ox+6,oy+11,4,4,B)
+    if s: b.px(ox+4,oy+11,1,4,s); b.px(ox+11,oy+11,1,4,s)
+    b.px(ox+3,oy,2,1,F); b.px(ox+2,oy+1,4,1,F); b.px(ox+3,oy+1,1,1,I); b.px(ox+1,oy+1,1,1,OUT)
+    b.px(ox+11,oy,2,1,F); b.px(ox+10,oy+1,4,1,F); b.px(ox+12,oy+1,1,1,I); b.px(ox+14,oy+1,1,1,OUT)
+    rrect(b,ox+2,oy+1,12,9,F,OUT); b.px(ox+3,oy+2,10,1,l); b.px(ox+3,oy+8,10,1,d)
+    if s: b.px(ox+7,oy+2,2,2,s); b.px(ox+4,oy+2,1,2,s); b.px(ox+11,oy+2,1,2,s)
+    b.px(ox+4,oy+6,8,3,B)
+    ey=oy+4; exL=ox+3; exR=ox+9
     if pose=="sleep" or blink:
-        b.px(exL,ey+3,4,1,OUT); b.px(exL,ey+2,1,1,OUT); b.px(exL+3,ey+2,1,1,OUT)
-        b.px(exR,ey+3,4,1,OUT); b.px(exR,ey+2,1,1,OUT); b.px(exR+3,ey+2,1,1,OUT)
+        b.px(exL,ey+2,3,1,OUT); b.px(exR,ey+2,3,1,OUT)
     else:
         dd=1 if pose=="read" else 0
-        b.px(exL,ey,4,5,WHT); b.px(exR,ey,4,5,WHT)
-        b.px(exL,ey,4,1,OUT); b.px(exR,ey,4,1,OUT)
-        b.px(exL,ey+1+dd,4,4-dd,iris); b.px(exR,ey+1+dd,4,4-dd,iris)
-        b.px(exL+1,ey+2+dd,2,2,PUP); b.px(exR+1,ey+2+dd,2,2,PUP)
-        b.px(exL+1,ey+1,1,1,WHT); b.px(exR+1,ey+1,1,1,WHT)
-        b.px(exL+2,ey+3,1,1,(210,230,255)); b.px(exR+2,ey+3,1,1,(210,230,255))
-    # nose + smile
-    b.px(ox+9,oy+11,2,1,N); b.px(ox+10,oy+12,1,1,N)
-    b.px(ox+7,oy+13,1,1,d); b.px(ox+12,oy+13,1,1,d); b.px(ox+9,oy+13,2,1,d)
-    # blush
-    b.px(ox+3,oy+11,2,1,(244,176,188)); b.px(ox+15,oy+11,2,1,(244,176,188))
-    # whiskers
-    b.px(ox+0,oy+10,3,1,WHT); b.px(ox+0,oy+12,3,1,WHT)
-    b.px(ox+17,oy+10,3,1,WHT); b.px(ox+17,oy+12,3,1,WHT)
-    # paws
-    py=oy+21
-    if pose=="walk":
-        k=(t//2)%2
-        b.px(ox+5,py,3,1,F); b.px(ox+11,py,3,1,F)
-        if k==0: b.px(ox+4,py,1,1,F)
-        else: b.px(ox+13,py,1,1,F)
-    elif pose=="read":
-        b.px(ox+5,oy+17,10,5,(233,231,223)); b.px(ox+9,oy+17,1,5,(196,193,184))
-        b.px(ox+5,py,3,1,F); b.px(ox+11,py,3,1,F)
+        b.px(exL,ey,3,4,WHT); b.px(exR,ey,3,4,WHT)
+        b.px(exL,ey,3,1,OUT); b.px(exR,ey,3,1,OUT)
+        b.px(exL,ey+1+dd,3,2,iris); b.px(exR,ey+1+dd,3,2,iris)
+        b.px(exL+1,ey+1+dd,1,2,PUP); b.px(exR+1,ey+1+dd,1,2,PUP)
+        b.px(exL,ey+1,1,1,WHT); b.px(exR,ey+1,1,1,WHT)
+    b.px(ox+7,oy+7,2,1,N); b.px(ox+5,oy+8,1,1,d); b.px(ox+9,oy+8,1,1,d)
+    b.px(ox+3,oy+7,1,1,(244,176,188)); b.px(ox+11,oy+7,1,1,(244,176,188))
+    b.px(ox+0,oy+7,2,1,WHT); b.px(ox+13,oy+7,2,1,WHT)
+    py=oy+15
+    if pose=="read":
+        b.px(ox+4,oy+12,8,4,(233,231,223)); b.px(ox+8,oy+12,1,4,(196,193,184))
+        b.px(ox+4,py,2,1,F); b.px(ox+10,py,2,1,F)
     else:
         k=(t//3)%2
-        b.px(ox+5,py-(1 if (pose=="type" and k==0) else 0),3,1,F)
-        b.px(ox+11,py-(1 if (pose=="type" and k==1) else 0),3,1,F)
+        b.px(ox+4,py-(1 if (pose=="type" and k==0) else 0),2,1,F)
+        b.px(ox+10,py-(1 if (pose=="type" and k==1) else 0),2,1,F)
     if pose=="sleep" and (t//12)%2==0:
-        b.px(ox+18,oy+1,1,1,OUT); b.px(ox+20,oy-2,1,1,OUT)
-    if pose=="type" and (t//10)%3==0:
-        b.px(ox+16,oy-2,6,2,WHT); b.px(ox+17,oy-1,1,1,OUT); b.px(ox+19,oy-1,1,1,OUT)
+        b.px(ox+15,oy+0,1,1,OUT); b.px(ox+16,oy-2,1,1,OUT)
 
 def item(b,ox,oy,kind):
     if not kind or kind=="none": return
-    cx=ox+10
+    cx=ox+8
     if kind=="santa":
-        b.px(cx-1,oy-4,2,1,(214,64,64)); b.px(cx-2,oy-3,4,1,(214,64,64))
-        b.px(cx-3,oy-2,6,1,(214,64,64)); b.px(cx-4,oy-1,8,1,(214,64,64)); b.px(cx-5,oy,10,1,(214,64,64))
-        b.px(cx-4,oy-1,3,1,(176,42,42))
-        b.px(cx-6,oy+1,12,1,WHT)
-        b.px(cx,oy-5,3,2,WHT)
+        b.px(cx,oy-3,2,1,(214,64,64)); b.px(cx-1,oy-2,4,1,(214,64,64)); b.px(cx-2,oy-1,6,1,(214,64,64)); b.px(cx-3,oy,8,1,(214,64,64))
+        b.px(cx-3,oy,3,1,(176,42,42)); b.px(cx-4,oy+1,9,1,WHT); b.px(cx+1,oy-4,2,2,WHT)
     elif kind=="bow":
-        b.px(cx-6,oy-2,4,4,F1); b.px(cx+1,oy-2,4,4,F1); b.px(cx-2,oy-1,3,2,(210,90,120)); b.px(cx-1,oy-2,1,4,(210,90,120))
+        b.px(cx-5,oy-1,3,3,F1); b.px(cx+0,oy-1,3,3,F1); b.px(cx-2,oy,2,1,(210,90,120)); b.px(cx-1,oy-1,1,3,(210,90,120))
     elif kind=="beanie":
-        b.px(cx-6,oy,13,1,(70,128,150)); b.px(cx-5,oy-1,11,1,(96,158,180)); b.px(cx-3,oy-3,7,2,(96,158,180)); b.px(cx-1,oy-5,3,2,WHT); b.px(cx-6,oy+1,13,1,(58,110,132))
+        b.px(cx-5,oy,11,1,(70,128,150)); b.px(cx-4,oy-1,9,1,(96,158,180)); b.px(cx-2,oy-2,5,1,(96,158,180)); b.px(cx-1,oy-4,2,2,WHT); b.px(cx-5,oy+1,11,1,(58,110,132))
     elif kind=="party":
-        b.px(cx,oy-6,1,1,WHT); b.px(cx,oy-5,1,1,F2); b.px(cx-1,oy-4,3,1,F1); b.px(cx-2,oy-3,5,1,F3); b.px(cx-3,oy-2,7,1,F4); b.px(cx-4,oy-1,9,1,F2); b.px(cx-5,oy,11,1,F1)
+        b.px(cx,oy-5,1,1,WHT); b.px(cx,oy-4,1,1,F2); b.px(cx-1,oy-3,3,1,F1); b.px(cx-2,oy-2,5,1,F3); b.px(cx-3,oy-1,7,1,F4); b.px(cx-4,oy,9,1,F2)
     elif kind=="crown":
-        c=(240,200,70); b.px(cx-5,oy-1,11,2,c); b.px(cx-5,oy-4,2,3,c); b.px(cx-1,oy-4,2,3,c); b.px(cx+4,oy-4,2,3,c)
-        b.px(cx-5,oy-5,1,1,F1); b.px(cx,oy-5,1,1,F4); b.px(cx+5,oy-5,1,1,F3)
+        b.px(cx-4,oy-1,9,2,GOLD); b.px(cx-4,oy-3,1,2,GOLD); b.px(cx,oy-3,1,2,GOLD); b.px(cx+4,oy-3,1,2,GOLD)
+        b.px(cx-4,oy-4,1,1,F1); b.px(cx,oy-4,1,1,F4); b.px(cx+4,oy-4,1,1,F3)
     elif kind=="cap":
-        b.px(cx-5,oy-1,11,2,(70,112,196)); b.px(cx-4,oy-3,8,2,(86,128,210)); b.px(cx+5,oy,5,1,(56,96,176))
+        b.px(cx-4,oy-1,9,2,(70,112,196)); b.px(cx-3,oy-2,6,1,(86,128,210)); b.px(cx+4,oy,4,1,(56,96,176))
     elif kind=="flower":
-        b.px(cx-8,oy,2,2,F1); b.px(cx-9,oy+1,1,1,F1); b.px(cx-6,oy+1,1,1,F1); b.px(cx-8,oy-1,1,1,F1); b.px(cx-7,oy,1,1,F2)
+        b.px(cx-6,oy,2,2,F1); b.px(cx-7,oy+1,1,1,F1); b.px(cx-4,oy+1,1,1,F1); b.px(cx-6,oy-1,1,1,F1); b.px(cx-5,oy,1,1,F2)
+    elif kind=="tophat":
+        b.px(cx-5,oy+1,11,1,BLK); b.px(cx-3,oy-4,7,5,BLK); b.px(cx-3,oy-2,7,1,(180,60,70))
+    elif kind=="headphones":
+        b.px(cx-5,oy-2,1,5,(70,74,90)); b.px(cx+5,oy-2,1,5,(70,74,90)); b.px(cx-4,oy-3,9,1,(70,74,90))
+        b.px(cx-6,oy+0,2,3,(120,124,140)); b.px(cx+5,oy+0,2,3,(120,124,140))
+    elif kind=="wizard":
+        b.px(cx,oy-5,1,2,(90,80,170)); b.px(cx-1,oy-3,3,1,(90,80,170)); b.px(cx-2,oy-2,5,1,(110,98,190)); b.px(cx-3,oy-1,7,1,(90,80,170)); b.px(cx-4,oy,9,1,(70,62,150))
+        b.px(cx-1,oy-2,1,1,F2); b.px(cx+1,oy-1,1,1,WHT); b.px(cx-3,oy,1,1,F2)
+    elif kind=="chef":
+        b.px(cx-4,oy,9,2,WHT); b.px(cx-3,oy-3,2,3,WHT); b.px(cx,oy-4,2,4,WHT); b.px(cx+3,oy-3,2,3,WHT); b.px(cx-1,oy-3,2,2,WHT)
+    elif kind=="bandana":
+        b.px(cx-5,oy,11,2,(208,72,72)); b.px(cx-5,oy,11,1,(232,110,110)); b.px(cx+4,oy+1,1,3,(208,72,72)); b.px(cx-6,oy+1,2,1,(208,72,72))
+        b.px(cx-3,oy+1,1,1,WHT); b.px(cx+1,oy+1,1,1,WHT)
+    elif kind=="halo":
+        b.px(cx-4,oy-4,9,1,GOLD); b.px(cx-4,oy-3,1,1,GOLD); b.px(cx+4,oy-3,1,1,GOLD); b.px(cx-3,oy-3,7,1,(255,236,150))
+    elif kind=="star":
+        b.px(cx-1,oy-5,2,1,F2); b.px(cx-2,oy-4,5,1,F2); b.px(cx-3,oy-3,7,1,F2); b.px(cx-2,oy-2,2,1,F2); b.px(cx+1,oy-2,2,1,F2); b.px(cx,oy-4,1,1,WHT)
 
 def laptop(b,lx,ly,tool):
     sc=SCR; cc=CODE
     if tool=="Bash": sc=(12,18,14)
     elif tool in ("WebSearch","WebFetch"): sc=(14,27,40); cc=CODEB
-    b.px(lx,ly-6,14,7,LAPC); b.px(lx+1,ly-5,12,5,sc)
-    for q in range(3):
-        ax=lx+2+((b_step+q*3)%9); b.px(ax,ly-4+q,4,1,cc)
-    b.px(lx-1,ly+1,16,2,LAPK); b.px(lx-1,ly+1,16,1,(224,226,230))
+    b.px(lx,ly-5,11,6,LAPC); b.px(lx+1,ly-4,9,4,sc)
+    for q in range(2):
+        ax=lx+2+((b_step+q*3)%7); b.px(ax,ly-3+q,3,1,cc)
+    b.px(lx-1,ly+1,13,2,LAPK); b.px(lx-1,ly+1,13,1,(224,226,230))
 
 def window(b,X,Y,w,h):
     b.px(X-2,Y-2,w+4,h+4,FRAME)
     b.px(X,Y,w,h*2//3,SKY[0]); b.px(X,Y+h*2//3,w,h-h*2//3,SKY[1])
-    b.px(X+w-9,Y+2,6,6,SUN); b.px(X+4,Y+6,9,2,CLOUD); b.px(X+7,Y+4,7,2,CLOUD)
-    b.px(X+3,Y+h-9,6,9,BLDG); b.px(X+w-11,Y+h-7,7,7,BLDG2); b.px(X+5,Y+h-7,1,2,(120,150,200)); b.px(X+w-9,Y+h-5,1,2,(120,150,200))
-    b.px(X+w//2-8,Y+h-6,5,6,TREED); b.px(X+w//2-10,Y+h-10,8,5,TREE)
-    b.px(X+w//2-1,Y,1,h,FRAME); b.px(X,Y+h//3,w,1,FRAME); b.px(X,Y+h*2//3,w,1,FRAME)
+    b.px(X+w-8,Y+2,5,5,SUN); b.px(X+3,Y+5,8,2,CLOUD); b.px(X+6,Y+3,6,2,CLOUD)
+    b.px(X+3,Y+h-8,6,8,BLDG); b.px(X+w-10,Y+h-6,7,6,BLDG2)
+    b.px(X+w//2-7,Y+h-6,5,6,TREED); b.px(X+w//2-9,Y+h-10,8,5,TREE)
+    b.px(X+w//2-1,Y,1,h,FRAME); b.px(X,Y+h//2,w,1,FRAME)
     b.px(X-3,Y+h+1,w+6,2,SILL)
 
 def chalk(b,X,Y,w,h):
     b.px(X-2,Y-2,w+4,h+4,CBF); b.px(X,Y,w,h,CB); b.px(X,Y,w,1,(58,72,64))
     b.px(X+4,Y+3,w-12,2,CHALK)
     b.px(X+4,Y+8,2,2,CH1); b.px(X+8,Y+9,w-18,1,CHALK)
-    b.px(X+4,Y+13,2,2,CH2); b.px(X+8,Y+14,w-22,1,CHALK)
-    b.px(X+4,Y+18,2,2,CH3); b.px(X+8,Y+19,w-16,1,CHALK)
-    b.px(X+w-9,Y+3,6,5,CHALK); b.px(X+w-3,Y+4,1,3,CHALK); b.px(X+w-8,Y+2,1,1,STEAM)
+    b.px(X+4,Y+13,2,2,CH2); b.px(X+8,Y+14,w-20,1,CHALK)
+    b.px(X+w-9,Y+3,6,5,CHALK); b.px(X+w-3,Y+4,1,3,CHALK)
 
 def shelves(b,X,Y):
     cups=[(217,83,79),(98,158,200),(110,180,120),(240,190,90),(198,156,224)]
     for i in range(2):
-        yy=Y+i*9
-        b.px(X,yy,30,1,SHELF); b.px(X,yy+1,30,1,SHELFD)
-        for j in range(5):
-            cx=X+1+j*6; c=cups[(i*5+j)%5]; b.px(cx,yy-4,4,4,c); b.px(cx+4,yy-3,1,2,c); b.px(cx,yy-4,4,1,(255,255,255))
-    b.px(X+22,Y-5,8,5,LEAF); b.px(X+24,Y-2,4,3,POT)
+        yy=Y+i*8
+        b.px(X,yy,32,1,SHELF); b.px(X,yy+1,32,1,SHELFD)
+        for j in range(6):
+            cx=X+1+j*5; c=cups[(i*6+j)%5]; b.px(cx,yy-4,4,4,c); b.px(cx,yy-4,4,1,(255,255,255))
+    b.px(X+24,Y-5,8,5,LEAF); b.px(X+26,Y-2,4,3,POT)
 
 def hang(b,X):
     b.px(X+2,0,1,5,(120,98,72)); b.px(X-1,5,8,3,POT); b.px(X-1,5,8,1,(216,114,66))
     b.px(X,8,1,4,VINE); b.px(X+2,8,1,5,VINE); b.px(X+4,8,1,3,VINE); b.px(X+6,8,1,4,VINE)
     b.px(X+1,11,1,1,LEAFL); b.px(X+5,12,1,1,LEAFL)
 
+def clock(b,X,Y):
+    b.px(X,Y,12,12,CLOCKF); b.px(X+1,Y+1,10,10,CLOCKB)
+    b.px(X+6,Y+2,1,4,CLOCKH); b.px(X+6,Y+6,3,1,CLOCKH)
+    sec=(b_step//5)%4
+    pts=[(6,2),(9,6),(6,9),(3,6)][sec]
+    b.px(X+pts[0],Y+pts[1],1,1,(208,80,80))
+
+def picframe(b,X,Y,kind):
+    b.px(X,Y,12,10,PIC); b.px(X+1,Y+1,10,8,PICB)
+    if kind==0:
+        b.px(X+3,Y+3,2,1,(80,70,60)); b.px(X+7,Y+3,2,1,(80,70,60)); b.px(X+4,Y+6,4,1,(208,120,120))
+    else:
+        b.px(X+3,Y+5,6,3,(120,180,120)); b.px(X+5,Y+3,2,2,(110,160,240))
+
 def bunting(b):
-    b.px(0,5,W,1,(120,108,86)); cols=[F1,F2,F3,F4,F5]; i=0
-    for fx in range(4,W-7,16):
-        c=cols[i%5]; i+=1; b.px(fx,6,7,1,c); b.px(fx+1,7,5,1,c); b.px(fx+2,8,3,1,c); b.px(fx+3,9,1,1,c)
+    b.px(0,4,W,1,(120,108,86)); cols=[F1,F2,F3,F4,F5]; i=0
+    for fx in range(4,W-7,15):
+        c=cols[i%5]; i+=1; b.px(fx,5,7,1,c); b.px(fx+1,6,5,1,c); b.px(fx+2,7,3,1,c); b.px(fx+3,8,1,1,c)
 
 def sign(b):
-    X=80; b.px(X,0,40,11,SIGN); b.px(X,0,40,1,SIGNL); b.px(X,10,40,1,(62,38,15)); b.px(X+1,1,38,1,(116,70,34))
-    b.px(X+9,5,4,2,SIGNT); b.px(X+8,3,1,1,SIGNT); b.px(X+10,2,1,1,SIGNT); b.px(X+13,2,1,1,SIGNT); b.px(X+16,3,1,1,SIGNT)
-    b.px(X+21,4,6,5,CREAM); b.px(X+27,5,1,2,CREAM); b.px(X+22,3,1,1,STEAM)
-    b.px(X+31,3,2,2,F1); b.px(X+34,3,2,2,F1); b.px(X+31,5,5,1,F1); b.px(X+32,6,3,1,F1); b.px(X+33,7,1,1,F1)
+    X=92; b.px(X,0,36,10,SIGN); b.px(X,0,36,1,SIGNL); b.px(X,9,36,1,(62,38,15)); b.px(X+1,1,34,1,(116,70,34))
+    b.px(X+8,4,4,2,SIGNT); b.px(X+7,2,1,1,SIGNT); b.px(X+9,1,1,1,SIGNT); b.px(X+12,1,1,1,SIGNT); b.px(X+15,2,1,1,SIGNT)
+    b.px(X+19,3,5,4,CREAM); b.px(X+24,4,1,2,CREAM); b.px(X+20,2,1,1,STEAM)
+    b.px(X+28,2,2,2,F1); b.px(X+31,2,2,2,F1); b.px(X+28,4,5,1,F1); b.px(X+29,5,3,1,F1); b.px(X+30,6,1,1,F1)
 
 def station(b):
-    b.px(4,COUNTER_Y-15,20,15,MACH); b.px(4,COUNTER_Y-15,20,1,(232,110,110)); b.px(4,COUNTER_Y-15,1,15,(232,110,110))
-    b.px(7,COUNTER_Y-12,14,5,CHROME); b.px(8,COUNTER_Y-11,12,3,(14,28,22)); b.px(9,COUNTER_Y-10,2,1,(120,200,150))
-    b.px(12,COUNTER_Y-5,2,4,(150,156,164)); b.px(11,COUNTER_Y-1,4,1,(150,156,164))
-    b.px(20,COUNTER_Y-14,3,2,(255,231,154) if (b_step%20<10) else (200,160,60))
-    if (b_step//5)%2==0: b.px(10,COUNTER_Y-17,1,2,STEAM)
-    b.px(28,COUNTER_Y-4,14,3,CREAM); b.px(34,COUNTER_Y-1,2,1,CREAM)
-    rrect(b,30,COUNTER_Y-9,11,5,CAKE,CAKEI); b.px(31,COUNTER_Y-8,9,1,CREAM); b.px(35,COUNTER_Y-11,1,2,CHERRY); b.px(33,COUNTER_Y-7,1,1,CAKEI)
+    Y=COUNTER_Y
+    b.px(2,Y-13,17,13,MACH); b.px(2,Y-13,17,1,(232,110,110)); b.px(2,Y-13,1,13,(232,110,110))
+    b.px(5,Y-10,11,4,CHROME); b.px(6,Y-9,9,2,(14,28,22)); b.px(7,Y-8,2,1,(120,200,150))
+    b.px(9,Y-4,2,3,(150,156,164)); b.px(8,Y-1,4,1,(150,156,164))
+    b.px(15,Y-12,3,2,(255,231,154) if (b_step%20<10) else (200,160,60))
+    if (b_step//5)%2==0: b.px(7,Y-15,1,2,STEAM)
+    # pastry display case
+    bx=22; b.px(bx,Y-9,20,9,PCASE); b.px(bx,Y-9,20,1,(230,242,247)); b.px(bx,Y-1,20,1,PCASEF); b.px(bx,Y-9,1,9,(170,200,210)); b.px(bx+19,Y-9,1,9,(170,200,210))
+    b.px(bx+2,Y-5,4,4,PIE); b.px(bx+2,Y-5,4,1,CREAM); b.px(bx+3,Y-2,1,1,(120,72,140))
+    b.px(bx+8,Y-4,3,3,DONUT); b.px(bx+9,Y-3,1,1,PCASE)
+    b.px(bx+13,Y-5,4,4,CAKE); b.px(bx+13,Y-5,4,1,CREAM); b.px(bx+15,Y-6,1,1,CHERRY)
 
 def cafe_back(b):
-    b.band(0,18,WALL[0]); b.band(18,32,WALL[1]); b.band(32,COUNTER_Y,WALL[2])
+    b.band(0,18,WALL[0]); b.band(18,30,WALL[1]); b.band(30,COUNTER_Y,WALL[2])
     bunting(b); sign(b)
-    window(b,8,11,38,18)
-    chalk(b,78,11,46,18)
-    shelves(b,152,14)
-    hang(b,56); hang(b,140)
+    window(b,6,10,38,18)
+    chalk(b,90,11,44,16)
+    shelves(b,176,12)
+    clock(b,54,3)
+    picframe(b,70,4,0); picframe(b,150,4,1)
+    hang(b,138)
     station(b)
     b.px(0,COUNTER_Y-1,W,2,COUNTERT)
 
-def counter_front(b, agents, pos):
-    b.px(0,COUNTER_Y+1,W,H-(COUNTER_Y+1),COUNTER)
-    b.px(0,COUNTER_Y+1,W,1,(168,112,66))
-    for x in range(0,W,20): b.px(x,COUNTER_Y+2,1,H-(COUNTER_Y+2),COUNTERD)
-    b.px(0,H-2,W,2,COUNTERE)
-    for i,(cx,_) in enumerate(pos):
-        digit(b,cx-1,COUNTER_Y+5,str(agents[i]["slot"]+1),BADGE)
-
 def layout(n):
     if n<=0: return []
-    xs,xe=44,190
+    xs,xe=52,210
     if n==1: return [((xs+xe)//2,COUNTER_Y)]
     return [(int(xs+(xe-xs)*i/(n-1)),COUNTER_Y) for i in range(n)]
 
 def workstation(b,cx,P,busy,tool,hat,selected):
     pose="sleep"
     if busy>0: pose="read" if tool in ("Read","WebSearch") else "type"
-    oy=COUNTER_Y-20
-    cat(b,cx-10,oy,P,pose,b_step)
-    item(b,cx-10,oy,hat)
+    oy=COUNTER_Y-16
+    cat(b,cx-8,oy,P,pose,b_step)
+    item(b,cx-8,oy,hat)
     if selected:
-        b.px(cx-2,oy-9,5,1,SELC); b.px(cx-1,oy-8,3,1,SELC); b.px(cx,oy-7,1,1,SELC)
-    if pose!="read": laptop(b,cx-7,COUNTER_Y-1,tool)
-    b.px(cx+8,COUNTER_Y-5,3,4,MUG); b.px(cx+8,COUNTER_Y-5,3,1,(235,110,106))
-    if busy>0 and (b_step//6)%2==0: b.px(cx+9,COUNTER_Y-7,1,1,STEAM)
+        b.px(cx-2,oy-8,5,1,SELC); b.px(cx-1,oy-7,3,1,SELC); b.px(cx,oy-6,1,1,SELC)
+    if pose!="read": laptop(b,cx-6,COUNTER_Y-1,tool)
+    b.px(cx+7,COUNTER_Y-5,3,4,MUG); b.px(cx+7,COUNTER_Y-5,3,1,(235,110,106))
+    if busy>0 and (b_step//6)%2==0: b.px(cx+8,COUNTER_Y-7,1,1,STEAM)
 
-def draw_office(b, agents, sel):
+def counter_front(b, agents, pos, sel, mode, namebuf):
+    b.px(0,COUNTER_Y+1,W,H-(COUNTER_Y+1),COUNTER)
+    b.px(0,COUNTER_Y+1,W,1,(168,112,66))
+    for x in range(0,W,20): b.px(x,COUNTER_Y+2,1,H-(COUNTER_Y+2),COUNTERD)
+    b.px(0,H-2,W,2,COUNTERE)
+    ny=COUNTER_Y+5
+    n=len(pos); slotw=(pos[1][0]-pos[0][0]) if n>1 else W
+    maxch=max(3,min(8,(slotw-2)//4))
+    for i,(cx,_) in enumerate(pos):
+        editing=(i==sel and mode=="name")
+        raw=namebuf if editing else agents[i]["name"]
+        label=raw[:maxch]; w=text_w(label)
+        cur=editing and ((b_step//5)%2==0)
+        totw=w+(3 if editing else 0); bx=cx-totw//2
+        if i==sel:
+            b.px(bx-2,ny-1,totw+4,7,SELC); draw_text(b,bx,ny,label,(60,44,20))
+            if cur: b.px(bx+w+1,ny,2,5,(60,44,20))
+        else:
+            draw_text(b,bx,ny,label,BADGE)
+
+def draw_office(b, agents, sel, mode="normal", namebuf=""):
     cafe_back(b)
     pos=layout(len(agents))
     for i,(cx,_) in enumerate(pos):
         a=agents[i]; workstation(b,cx,a["pal"],a["busy"],a["tool"],a["hat"], i==sel)
-    counter_front(b, agents, pos)
+    counter_front(b, agents, pos, sel, mode, namebuf)
 
 # ---------- store ----------
 class Store:
@@ -328,16 +365,6 @@ class Store:
             out.append({"slot":se["slot"],"busy":busy,"tool":tool})
             if len(out)>=8: break
         return out
-    def headline(s,now):
-        pr=any(ev=="UserPromptSubmit" and ts>=now-4 for ts,ev,_ in s.glob)
-        best=None
-        for ts,ev,tool in s.glob:
-            if ts>=now-5 and (best is None or ts>=best[0]): best=(ts,ev,tool)
-        ev,tool=(best[1],best[2]) if best else (None,None)
-        if pr: return "yeni gorev geldi!"
-        if ev in ("Stop","SubagentStop"): return "is tamamlandi"
-        t=TOOL_TASKS.get(tool)
-        return t if t else ("kafe sakin - kediler uyukluyor" if not tool else str(tool))
 
 def load_ovr():
     try:
@@ -348,13 +375,18 @@ def save_ovr(o):
         os.makedirs(APP_DIR,exist_ok=True)
         with open(OVR_FILE,"w",encoding="utf-8") as f: json.dump(o,f,ensure_ascii=False)
     except Exception: pass
+
+AUTO_HATS={}
 def resolve(agents,ovr):
     out=[]
     for a in agents:
         slot=a["slot"]; o=ovr.get(str(slot),{})
         name=o.get("name") or NAMES[slot%len(NAMES)]
         ci=o.get("color"); ci=ci if isinstance(ci,int) else slot%len(PAL)
-        hat=o.get("hat") or HAT_ORDER[slot%len(HAT_ORDER)]
+        if o.get("hat"): hat=o["hat"]
+        else:
+            if slot not in AUTO_HATS: AUTO_HATS[slot]=random.choice(ALL_HATS)
+            hat=AUTO_HATS[slot]
         a2=dict(a); a2["name"]=name; a2["pal"]=PAL[ci%len(PAL)]; a2["ci"]=ci%len(PAL); a2["hat"]=hat; out.append(a2)
     return out
 
@@ -423,36 +455,12 @@ def uninstall_hooks():
     with open(SETTINGS,"w",encoding="utf-8") as f: json.dump(data,f,indent=2,ensure_ascii=False); f.write("\n")
     print("• Hook'lar kaldirildi (%d)."%rm)
 
-# ---------- UI ----------
-def meter(busy): return "".join("#" if i<busy else "." for i in range(5))
-NEED_ROWS=H//2+5
-def build_screen(b,agents,headline,sel,mode,namebuf,cols,rows):
+NEED_ROWS=H//2
+def screen_or_msg(b,cols,rows):
     if cols<W or rows<NEED_ROWS:
-        return "\n".join(["","  Terminali biraz buyut:","  en az %d sutun x %d satir gerekli."%(W,NEED_ROWS),
-                          "  (su an %d x %d)"%(cols,rows),"","  Warp'ta pane'i genislet."])
-    out=[]
-    out.append("\x1b[1m"+("  NEKO HQ   yogunluk %s   |  %s"%(meter(max([a['busy'] for a in agents],default=0)),headline))[:cols]+"\x1b[0m")
-    out+=render_terminal(b)
-    out.append("")
-    if not agents:
-        out.append("  (henuz kedi yok — yan panede `claude` calistirip soru sor)")
-    else:
-        segs=[]
-        for i,a in enumerate(agents):
-            r,g,bl=a["pal"]["F"]
-            dot=("\x1b[38;2;%d;%d;%dm\u25cf\x1b[0m"%(r,g,bl)) if a["busy"]>0 else "\x1b[2m\u25cb\x1b[0m"
-            if i==sel and mode=="name": nm="["+namebuf+"\u2588]"
-            else: nm=a["name"]
-            seg=" %d%s%s "%(a["slot"]+1,dot,nm[:10])
-            if i==sel: seg="\x1b[7m"+seg+"\x1b[0m"
-            segs.append(seg)
-        out.append("  "+" ".join(segs))
-        st=TOOL_TASKS.get(agents[sel]["tool"],"calisiyor") if agents[sel]["busy"]>0 else "uyuyor"
-        out.append("  \u2192 secili: %s  (%s)"%(agents[sel]["name"],st))
-    out.append("")
-    if mode=="name": out.append("  isim yaz · Enter=tamam · Esc=iptal")
-    else: out.append("  \u2190 \u2192 sec · [n] isim · [c] renk · [h] sapka · [q] cik")
-    return "\n".join(out)
+        return "\n".join(["","  NEKO HQ — pencereyi buyut:","  en az %d sutun x %d satir."%(W,NEED_ROWS),
+                          "  (su an %d x %d)  ·  Warp'ta pane'i genislet."%(cols,rows)]), True
+    return "\x1b[H"+"\n".join(render_terminal(b)), False
 
 def parse_keys(buf):
     keys=[]; i=0
@@ -485,7 +493,7 @@ def main():
         for fr in range(a.frames):
             b_step=18+fr; ags=resolve(demo_agents(time.time()+fr),ovr)
             buf=Buf(W,H); draw_office(buf,ags,0)
-            sys.stdout.write("\x1b[H"+build_screen(buf,ags,"demo",0,"normal","",W,NEED_ROWS)+"\n")
+            sys.stdout.write("\x1b[H"+"\n".join(render_terminal(buf))+"\n")
         return
 
     if not a.no_install:
@@ -503,9 +511,14 @@ def main():
             now=time.time()
             if a.demo: ags_raw=demo_agents(now)
             else: store.poll(now); store.prune(now); ags_raw=store.agents(now)
-            ags=resolve(ags_raw,ovr); head="demo" if a.demo else store.headline(now)
+            ags=resolve(ags_raw,ovr)
             if ags and sel>=len(ags): sel=len(ags)-1
             if sel<0: sel=0
+            # ara sira sapka degistir (manuel olmayanlar)
+            for a2 in ags:
+                slot=a2["slot"]
+                if not ovr.get(str(slot),{}).get("hat") and random.random()<0.004:
+                    AUTO_HATS[slot]=random.choice(ALL_HATS)
             if istty:
                 buf_in=""
                 while select.select([sys.stdin],[],[],0)[0]:
@@ -516,11 +529,11 @@ def main():
                     if mode=="name":
                         if key in ("\r","\n"):
                             if ags and namebuf.strip():
-                                ovr.setdefault(str(ags[sel]["slot"]),{})["name"]=namebuf.strip()[:10]; save_ovr(ovr)
+                                ovr.setdefault(str(ags[sel]["slot"]),{})["name"]=namebuf.strip()[:8]; save_ovr(ovr)
                             mode="normal"; namebuf=""
                         elif key=="ESC": mode="normal"; namebuf=""
                         elif key in ("\x7f","\b"): namebuf=namebuf[:-1]
-                        elif len(key)==1 and key.isprintable() and len(namebuf)<10: namebuf+=key
+                        elif len(key)==1 and key.isprintable() and len(namebuf)<8: namebuf+=key
                     else:
                         if key in ("q","Q"): raise KeyboardInterrupt
                         elif key in ("RIGHT","DOWN","d"):
@@ -531,7 +544,7 @@ def main():
                             k=int(key)-1
                             if k<len(ags): sel=k
                         elif key in ("n","N"):
-                            if ags: mode="name"; namebuf=""
+                            if ags: mode="name"; namebuf=ags[sel]["name"]
                         elif key in ("c","C"):
                             if ags:
                                 o=ovr.setdefault(str(ags[sel]["slot"]),{}); cur=o.get("color"); cur=cur if isinstance(cur,int) else ags[sel]["ci"]
@@ -539,12 +552,11 @@ def main():
                         elif key in ("h","H"):
                             if ags:
                                 o=ovr.setdefault(str(ags[sel]["slot"]),{}); cur=o.get("hat") or ags[sel]["hat"]
-                                o["hat"]=HATS[(HATS.index(cur)+1)%len(HATS)] if cur in HATS else HATS[1]; save_ovr(ovr)
-            buf=Buf(W,H); draw_office(buf,ags,sel)
+                                o["hat"]=ALL_HATS[(ALL_HATS.index(cur)+1)%len(ALL_HATS)] if cur in ALL_HATS else ALL_HATS[0]; save_ovr(ovr)
+            buf=Buf(W,H); draw_office(buf,ags,sel,mode,namebuf)
             sz=shutil.get_terminal_size((W,NEED_ROWS)); cols=sz.columns; rows=sz.lines
-            small=(cols<W or rows<NEED_ROWS)
-            screen=build_screen(buf,ags,head,sel,mode,namebuf,cols,rows)
-            sys.stdout.write(("\x1b[H\x1b[2J" if small else "\x1b[H")+screen)
+            out,small=screen_or_msg(buf,cols,rows)
+            sys.stdout.write(("\x1b[H\x1b[2J"+out) if small else out)
             sys.stdout.flush(); b_step+=1
             if not istty: break
             time.sleep(0.1)
