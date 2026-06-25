@@ -15,7 +15,7 @@ try:
 except Exception:
     HAVE_TTY=False
 
-W, H = 132, 56
+W, H = 108, 56
 COUNTER_Y = 40
 HOME=os.path.expanduser("~"); APP_DIR=os.path.join(HOME,".neko-hq")
 LOG=os.path.join(APP_DIR,"activity.log"); OVR_FILE=os.path.join(APP_DIR,"cats.json")
@@ -156,8 +156,8 @@ def cat(b,ox,oy,P,pose,t):
     # blush
     b.px(ox+3,oy+11,2,1,(244,176,188)); b.px(ox+16,oy+11,2,1,(244,176,188))
     # whiskers
-    b.px(ox+0,oy+10,3,1,WHT); b.px(ox+0,oy+12,3,1,WHT)
-    b.px(ox+18,oy+10,3,1,WHT); b.px(ox+18,oy+12,3,1,WHT)
+    b.px(ox+0,oy+10,3,1,(236,236,236)); b.px(ox+1,oy+13,2,1,(236,236,236))
+    b.px(ox+18,oy+10,3,1,(236,236,236)); b.px(ox+19,oy+13,2,1,(236,236,236))
     # paws
     py=oy+23
     if pose=="read":
@@ -274,16 +274,14 @@ def cafe_back(b):
     b.band(0,16,WALL[0]); b.band(16,28,WALL[1]); b.band(28,COUNTER_Y,WALL[2])
     bunting(b); sign(b)
     window(b,3,11,26,18)
-    shelves(b,99,12)
-    clock(b,34,3)
-    picframe(b,86,4,0)
-    hang(b,70)
+    shelves(b,77,12)
+    clock(b,18,3)
     station(b)
     b.px(0,COUNTER_Y-1,W,2,COUNTERT)
 
 def layout(n):
     if n<=0: return []
-    xs,xe=26,120
+    xs,xe=22,90
     if n==1: return [((xs+xe)//2,COUNTER_Y)]
     return [(int(xs+(xe-xs)*i/(n-1)),COUNTER_Y) for i in range(n)]
 
@@ -423,15 +421,60 @@ def _dims(cols,rows):
     if BLOCKS=="sext": return cols*2, rows*3
     if BLOCKS=="half": return cols, rows*2
     return cols*2, rows*2
+def _scale_int(src,k):
+    out=Buf(src.w*k, src.h*k)
+    for y in range(src.h):
+        srow=src.d[y]
+        for ky in range(k):
+            drow=out.d[y*k+ky]
+            for x in range(src.w):
+                c=srow[x]; bx=x*k
+                for kx in range(k): drow[bx+kx]=c
+    return out
+def _downsample(src,d):
+    ow=max(1,src.w//d); oh=max(1,src.h//d); out=Buf(ow,oh)
+    for y in range(oh):
+        drow=out.d[y]
+        for x in range(ow):
+            cnt={}
+            for yy in range(d):
+                sy=y*d+yy
+                if sy>=src.h: break
+                srow=src.d[sy]
+                for xx in range(d):
+                    sx=x*d+xx
+                    if sx<src.w:
+                        c=srow[sx]; cnt[c]=cnt.get(c,0)+1
+            if not cnt: drow[x]=(0,0,0); continue
+            best=None; bc=-1
+            for c,n in cnt.items():
+                lum=c[0]+c[1]+c[2]
+                if n>bc or (n==bc and lum< (best[0]+best[1]+best[2] if best else 999)):
+                    bc=n; best=c
+            drow[x]=best
+    return out
+
 def build_native(agents,sel,mode,namebuf,cols,rows):
     BW,BH=_dims(cols,rows)
+    design=Buf(W,H)
+    draw_office(design,agents,sel,mode,namebuf)
+    r=min(BW/float(W), BH/float(H))
+    if r>=1.0:
+        k=int(r); sc=_scale_int(design,k); sf=float(k)
+    else:
+        inv=1.0/r; d=int(inv); d=d+1 if d<inv else d; d=max(1,d)
+        sc=_downsample(design,d); sf=1.0/d
     buf=Buf(BW,BH)
-    s=min(BW/float(W), BH/float(H))
-    ox=(BW-int(W*s+0.5))//2; oy=(BH-int(H*s+0.5))//2
-    cy=max(0,oy+int(COUNTER_Y*s+0.5))
-    buf.band(0,cy,WALL[0]); buf.band(cy,BH,COUNTER)
-    c=SC(buf,s,ox,oy)
-    draw_office(c,agents,sel,mode,namebuf)
+    ox=(BW-sc.w)//2; oy=(BH-sc.h)//2
+    cyl=max(0,oy+int(COUNTER_Y*sf))
+    buf.band(0,cyl,WALL[0]); buf.band(cyl,BH,COUNTER)
+    for y in range(sc.h):
+        ty=oy+y
+        if 0<=ty<BH:
+            drow=buf.d[ty]; srow=sc.d[y]
+            for x in range(sc.w):
+                tx=ox+x
+                if 0<=tx<BW: drow[tx]=srow[x]
     if mode=="name": draw_edit_overlay(buf,namebuf,BW,BH)
     return buf
 
