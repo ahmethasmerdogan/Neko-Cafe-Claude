@@ -4,9 +4,9 @@
 NEKO HQ (terminal) — Claude CLI kedi kafesi, dogrudan terminalde.
 Warp'ta bir panede `neko` (ya da `python3 ~/.neko-hq/neko_tui.py`), digerinde `claude`.
 Her oturum bir kedi olur; calisinca yazar, sessizlikte uyur. Kafasinda rastgele
-sapkalar olur (ara sira degisir). Isim/secim/duzenleme her sey piksel icindedir.
+sapkalar (ara sira degisir). Isim/secim/duzenleme her sey pikselin icinde.
 Tuslar:  <-  ->  kedi sec · n isim · c renk · h sapka · q cik
-Yalnizca Python standart kutuphanesi (macOS/Linux/Warp, truecolor).
+Yalnizca Python standart kutuphanesi (macOS/Linux/Warp, truecolor). Pencereye gore olcekler.
 """
 import os, sys, json, time, re, select, argparse, shutil, random
 try:
@@ -15,8 +15,8 @@ try:
 except Exception:
     HAVE_TTY=False
 
-W, H = 220, 48
-COUNTER_Y = 34
+W, H = 132, 56
+COUNTER_Y = 40
 HOME=os.path.expanduser("~"); APP_DIR=os.path.join(HOME,".neko-hq")
 LOG=os.path.join(APP_DIR,"activity.log"); OVR_FILE=os.path.join(APP_DIR,"cats.json")
 SETTINGS=os.path.join(HOME,".claude","settings.json")
@@ -45,13 +45,11 @@ COUNTER=(150,98,56); COUNTERT=(176,120,72); COUNTERD=(96,60,32); COUNTERE=(70,44
 SIGN=(94,58,30); SIGNL=(122,74,38); SIGNT=(243,220,174)
 SKY=[(150,205,242),(176,216,245)]; SUN=(255,209,74); CLOUD=(255,255,255); BLDG=(176,150,170); BLDG2=(150,124,150)
 TREE=(74,165,82); TREED=(47,122,52); FRAME=(110,74,40); SILL=(138,94,54)
-CB=(40,52,46); CBF=(110,74,40); CHALK=(244,239,230); CH1=(244,193,208); CH2=(191,224,194); CH3=(188,214,240)
+CB=(40,52,46); CBF=(110,74,40); CHALK=(244,239,230); CH1=(244,193,208); CH2=(191,224,194)
 SHELF=(122,80,44); SHELFD=(90,58,32)
 POT=(194,98,47); POTD=(151,67,33); LEAF=(74,165,82); LEAFD=(47,122,52); LEAFL=(98,193,104); VINE=(63,143,68)
 MACH=(211,79,79); MACHD=(168,58,58); CHROME=(201,206,214); CAKE=(247,197,214); CAKEI=(232,154,176); CHERRY=(210,59,84); CREAM=(255,244,234)
-PCASE=(206,228,236); PCASEF=(120,84,48); PIE=(232,178,96); PIEC=(120,72,140); DONUT=(244,170,150)
-CLOCKF=(120,84,48); CLOCKB=(248,243,232); CLOCKH=(60,46,34)
-PIC=(120,84,48); PICB=(250,246,236)
+CLOCKF=(120,84,48); CLOCKB=(248,243,232); CLOCKH=(60,46,34); PIC=(120,84,48); PICB=(250,246,236)
 LAPC=(52,57,74); LAPK=(207,210,216); SCR=(16,35,27); CODE=(123,224,143); CODEB=(111,182,239)
 MUG=(217,83,79); STEAM=(238,246,255)
 F1=(239,138,160); F2=(242,196,99); F3=(143,208,160); F4=(143,191,230); F5=(198,156,224)
@@ -74,11 +72,10 @@ FONT={
 "-":["000","000","111","000","000"],".":["000","000","000","000","010"],"!":["010","010","010","000","010"],
 }
 TR={"Ç":"C","Ş":"S","İ":"I","Ğ":"G","Ö":"O","Ü":"U","Â":"A","Î":"I","Û":"U"}
-
 def text_w(s): return max(0,len(s)*4-1)
 def draw_text(b,x,y,s,col):
     cx=x
-    for ch in s.upper():
+    for ch in str(s).upper():
         ch=TR.get(ch,ch); g=FONT.get(ch)
         if g:
             for r in range(5):
@@ -86,6 +83,16 @@ def draw_text(b,x,y,s,col):
                 for c in range(3):
                     if row[c]=="1": b.px(cx+c,y+r,1,1,col)
         cx+=4
+def draw_text_scaled(b,x,y,s,col,fs):
+    cx=x
+    for ch in str(s).upper():
+        ch=TR.get(ch,ch); g=FONT.get(ch)
+        if g:
+            for r in range(5):
+                row=g[r]
+                for cc in range(3):
+                    if row[cc]=="1": b.px(cx+cc*fs,y+r*fs,fs,fs,col)
+        cx+=4*fs
 
 class Buf:
     def __init__(s,w,h): s.w=w; s.h=h; s.d=[[(0,0,0) for _ in range(w)] for _ in range(h)]
@@ -113,85 +120,101 @@ b_step=0
 def cat(b,ox,oy,P,pose,t):
     F,d,l,B,I,N,iris,s=P["F"],P["d"],P["l"],P["B"],P["I"],P["N"],P["iris"],P["s"]
     blink=(t//9)%13==0
-    b.px(ox+3,oy+16,11,1,(70,48,28))
-    b.px(ox+12,oy+11,3,2,OUT); b.px(ox+12,oy+11,2,1,F); b.px(ox+13,oy+8,2,4,OUT); b.px(ox+13,oy+9,1,3,F)
-    if s: b.px(ox+13,oy+9,1,1,s)
-    rrect(b,ox+3,oy+9,10,7,F,OUT); b.px(ox+6,oy+11,4,4,B)
-    if s: b.px(ox+4,oy+11,1,4,s); b.px(ox+11,oy+11,1,4,s)
-    b.px(ox+3,oy,2,1,F); b.px(ox+2,oy+1,4,1,F); b.px(ox+3,oy+1,1,1,I); b.px(ox+1,oy+1,1,1,OUT)
-    b.px(ox+11,oy,2,1,F); b.px(ox+10,oy+1,4,1,F); b.px(ox+12,oy+1,1,1,I); b.px(ox+14,oy+1,1,1,OUT)
-    rrect(b,ox+2,oy+1,12,9,F,OUT); b.px(ox+3,oy+2,10,1,l); b.px(ox+3,oy+8,10,1,d)
-    if s: b.px(ox+7,oy+2,2,2,s); b.px(ox+4,oy+2,1,2,s); b.px(ox+11,oy+2,1,2,s)
-    b.px(ox+4,oy+6,8,3,B)
-    ey=oy+4; exL=ox+3; exR=ox+9
+    b.px(ox+4,oy+23,14,1,(70,48,28))
+    # tail
+    b.px(ox+16,oy+16,4,2,OUT); b.px(ox+16,oy+16,3,1,F)
+    b.px(ox+18,oy+10,3,7,OUT); b.px(ox+18,oy+11,2,6,F)
+    b.px(ox+16,oy+8,3,4,OUT);  b.px(ox+16,oy+9,2,3,F)
+    if s: b.px(ox+18,oy+12,2,1,s); b.px(ox+16,oy+9,2,1,s)
+    # body
+    rrect(b,ox+4,oy+15,13,9,F,OUT); b.px(ox+7,oy+17,7,6,B)
+    if s: b.px(ox+5,oy+17,1,6,s); b.px(ox+15,oy+17,1,6,s)
+    # ears
+    b.px(ox+3,oy,3,1,OUT); b.px(ox+2,oy+1,5,1,OUT); b.px(ox+3,oy+1,3,1,F); b.px(ox+3,oy+2,4,2,F); b.px(ox+4,oy+2,2,2,I)
+    b.px(ox+15,oy,3,1,OUT); b.px(ox+14,oy+1,5,1,OUT); b.px(ox+15,oy+1,3,1,F); b.px(ox+14,oy+2,4,2,F); b.px(ox+15,oy+2,2,2,I)
+    # head
+    rrect(b,ox+2,oy+3,17,13,F,OUT); b.px(ox+4,oy+4,13,1,l); b.px(ox+1,oy+9,1,4,F); b.px(ox+19,oy+9,1,4,F); b.px(ox+4,oy+14,13,1,d)
+    if s: b.px(ox+8,oy+4,2,3,s); b.px(ox+5,oy+5,1,2,s); b.px(ox+14,oy+5,1,2,s)
+    # muzzle
+    b.px(ox+5,oy+10,11,5,B)
+    # eyes (big & cute)
+    ey=oy+6; exL=ox+4; exR=ox+12
     if pose=="sleep" or blink:
-        b.px(exL,ey+2,3,1,OUT); b.px(exR,ey+2,3,1,OUT)
+        b.px(exL,ey+3,4,1,OUT); b.px(exL,ey+2,1,1,OUT); b.px(exL+3,ey+2,1,1,OUT)
+        b.px(exR,ey+3,4,1,OUT); b.px(exR,ey+2,1,1,OUT); b.px(exR+3,ey+2,1,1,OUT)
     else:
         dd=1 if pose=="read" else 0
-        b.px(exL,ey,3,4,WHT); b.px(exR,ey,3,4,WHT)
-        b.px(exL,ey,3,1,OUT); b.px(exR,ey,3,1,OUT)
-        b.px(exL,ey+1+dd,3,2,iris); b.px(exR,ey+1+dd,3,2,iris)
-        b.px(exL+1,ey+1+dd,1,2,PUP); b.px(exR+1,ey+1+dd,1,2,PUP)
-        b.px(exL,ey+1,1,1,WHT); b.px(exR,ey+1,1,1,WHT)
-    b.px(ox+7,oy+7,2,1,N); b.px(ox+5,oy+8,1,1,d); b.px(ox+9,oy+8,1,1,d)
-    b.px(ox+3,oy+7,1,1,(244,176,188)); b.px(ox+11,oy+7,1,1,(244,176,188))
-    b.px(ox+0,oy+7,2,1,WHT); b.px(ox+13,oy+7,2,1,WHT)
-    py=oy+15
+        b.px(exL,ey,4,5,WHT); b.px(exR,ey,4,5,WHT)
+        b.px(exL,ey,4,1,OUT); b.px(exR,ey,4,1,OUT)
+        b.px(exL,ey+1+dd,4,4-dd,iris); b.px(exR,ey+1+dd,4,4-dd,iris)
+        b.px(exL+1,ey+2+dd,2,2,PUP); b.px(exR+1,ey+2+dd,2,2,PUP)
+        b.px(exL+1,ey+1,1,1,WHT); b.px(exR+1,ey+1,1,1,WHT)
+        b.px(exL+2,ey+3,1,1,(210,230,255)); b.px(exR+2,ey+3,1,1,(210,230,255))
+    # nose + smile
+    b.px(ox+9,oy+11,3,1,N); b.px(ox+10,oy+12,1,1,N)
+    b.px(ox+7,oy+13,1,1,d); b.px(ox+13,oy+13,1,1,d); b.px(ox+9,oy+13,3,1,d)
+    # blush
+    b.px(ox+3,oy+11,2,1,(244,176,188)); b.px(ox+16,oy+11,2,1,(244,176,188))
+    # whiskers
+    b.px(ox+0,oy+10,3,1,WHT); b.px(ox+0,oy+12,3,1,WHT)
+    b.px(ox+18,oy+10,3,1,WHT); b.px(ox+18,oy+12,3,1,WHT)
+    # paws
+    py=oy+23
     if pose=="read":
-        b.px(ox+4,oy+12,8,4,(233,231,223)); b.px(ox+8,oy+12,1,4,(196,193,184))
-        b.px(ox+4,py,2,1,F); b.px(ox+10,py,2,1,F)
+        b.px(ox+5,oy+18,11,5,(233,231,223)); b.px(ox+9,oy+18,1,5,(196,193,184))
+        b.px(ox+5,py,3,1,F); b.px(ox+11,py,3,1,F)
     else:
         k=(t//3)%2
-        b.px(ox+4,py-(1 if (pose=="type" and k==0) else 0),2,1,F)
-        b.px(ox+10,py-(1 if (pose=="type" and k==1) else 0),2,1,F)
+        b.px(ox+5,py-(1 if (pose=="type" and k==0) else 0),3,1,F)
+        b.px(ox+11,py-(1 if (pose=="type" and k==1) else 0),3,1,F)
     if pose=="sleep" and (t//12)%2==0:
-        b.px(ox+15,oy+0,1,1,OUT); b.px(ox+16,oy-2,1,1,OUT)
+        b.px(ox+19,oy+1,1,1,OUT); b.px(ox+21,oy-2,1,1,OUT)
 
 def item(b,ox,oy,kind):
     if not kind or kind=="none": return
-    cx=ox+8
+    cx=ox+10
     if kind=="santa":
-        b.px(cx,oy-3,2,1,(214,64,64)); b.px(cx-1,oy-2,4,1,(214,64,64)); b.px(cx-2,oy-1,6,1,(214,64,64)); b.px(cx-3,oy,8,1,(214,64,64))
-        b.px(cx-3,oy,3,1,(176,42,42)); b.px(cx-4,oy+1,9,1,WHT); b.px(cx+1,oy-4,2,2,WHT)
+        b.px(cx,oy-4,2,1,(214,64,64)); b.px(cx-1,oy-3,4,1,(214,64,64)); b.px(cx-2,oy-2,6,1,(214,64,64)); b.px(cx-3,oy-1,8,1,(214,64,64)); b.px(cx-4,oy,10,1,(214,64,64))
+        b.px(cx-3,oy-1,3,1,(176,42,42)); b.px(cx-5,oy+1,12,1,WHT); b.px(cx+1,oy-5,3,2,WHT)
     elif kind=="bow":
-        b.px(cx-5,oy-1,3,3,F1); b.px(cx+0,oy-1,3,3,F1); b.px(cx-2,oy,2,1,(210,90,120)); b.px(cx-1,oy-1,1,3,(210,90,120))
+        b.px(cx-6,oy-2,4,4,F1); b.px(cx+1,oy-2,4,4,F1); b.px(cx-2,oy-1,3,2,(210,90,120)); b.px(cx-1,oy-2,1,4,(210,90,120))
     elif kind=="beanie":
-        b.px(cx-5,oy,11,1,(70,128,150)); b.px(cx-4,oy-1,9,1,(96,158,180)); b.px(cx-2,oy-2,5,1,(96,158,180)); b.px(cx-1,oy-4,2,2,WHT); b.px(cx-5,oy+1,11,1,(58,110,132))
+        b.px(cx-6,oy,13,1,(70,128,150)); b.px(cx-5,oy-1,11,1,(96,158,180)); b.px(cx-3,oy-3,7,2,(96,158,180)); b.px(cx-1,oy-5,3,2,WHT); b.px(cx-6,oy+1,13,1,(58,110,132))
     elif kind=="party":
-        b.px(cx,oy-5,1,1,WHT); b.px(cx,oy-4,1,1,F2); b.px(cx-1,oy-3,3,1,F1); b.px(cx-2,oy-2,5,1,F3); b.px(cx-3,oy-1,7,1,F4); b.px(cx-4,oy,9,1,F2)
+        b.px(cx,oy-6,1,1,WHT); b.px(cx,oy-5,1,1,F2); b.px(cx-1,oy-4,3,1,F1); b.px(cx-2,oy-3,5,1,F3); b.px(cx-3,oy-2,7,1,F4); b.px(cx-4,oy-1,9,1,F2); b.px(cx-5,oy,11,1,F1)
     elif kind=="crown":
-        b.px(cx-4,oy-1,9,2,GOLD); b.px(cx-4,oy-3,1,2,GOLD); b.px(cx,oy-3,1,2,GOLD); b.px(cx+4,oy-3,1,2,GOLD)
-        b.px(cx-4,oy-4,1,1,F1); b.px(cx,oy-4,1,1,F4); b.px(cx+4,oy-4,1,1,F3)
+        b.px(cx-5,oy-1,11,2,GOLD); b.px(cx-5,oy-4,2,3,GOLD); b.px(cx-1,oy-4,2,3,GOLD); b.px(cx+4,oy-4,2,3,GOLD)
+        b.px(cx-5,oy-5,1,1,F1); b.px(cx,oy-5,1,1,F4); b.px(cx+5,oy-5,1,1,F3)
     elif kind=="cap":
-        b.px(cx-4,oy-1,9,2,(70,112,196)); b.px(cx-3,oy-2,6,1,(86,128,210)); b.px(cx+4,oy,4,1,(56,96,176))
+        b.px(cx-5,oy-1,11,2,(70,112,196)); b.px(cx-4,oy-3,8,2,(86,128,210)); b.px(cx+5,oy,5,1,(56,96,176))
     elif kind=="flower":
-        b.px(cx-6,oy,2,2,F1); b.px(cx-7,oy+1,1,1,F1); b.px(cx-4,oy+1,1,1,F1); b.px(cx-6,oy-1,1,1,F1); b.px(cx-5,oy,1,1,F2)
+        b.px(cx-7,oy,2,2,F1); b.px(cx-8,oy+1,1,1,F1); b.px(cx-5,oy+1,1,1,F1); b.px(cx-7,oy-1,1,1,F1); b.px(cx-6,oy,1,1,F2)
     elif kind=="tophat":
-        b.px(cx-5,oy+1,11,1,BLK); b.px(cx-3,oy-4,7,5,BLK); b.px(cx-3,oy-2,7,1,(180,60,70))
+        b.px(cx-6,oy+1,13,1,BLK); b.px(cx-4,oy-5,9,6,BLK); b.px(cx-4,oy-2,9,1,(180,60,70))
     elif kind=="headphones":
-        b.px(cx-5,oy-2,1,5,(70,74,90)); b.px(cx+5,oy-2,1,5,(70,74,90)); b.px(cx-4,oy-3,9,1,(70,74,90))
-        b.px(cx-6,oy+0,2,3,(120,124,140)); b.px(cx+5,oy+0,2,3,(120,124,140))
+        b.px(cx-6,oy-2,1,6,(70,74,90)); b.px(cx+6,oy-2,1,6,(70,74,90)); b.px(cx-5,oy-3,11,1,(70,74,90))
+        b.px(cx-7,oy+0,2,4,(120,124,140)); b.px(cx+6,oy+0,2,4,(120,124,140))
     elif kind=="wizard":
-        b.px(cx,oy-5,1,2,(90,80,170)); b.px(cx-1,oy-3,3,1,(90,80,170)); b.px(cx-2,oy-2,5,1,(110,98,190)); b.px(cx-3,oy-1,7,1,(90,80,170)); b.px(cx-4,oy,9,1,(70,62,150))
-        b.px(cx-1,oy-2,1,1,F2); b.px(cx+1,oy-1,1,1,WHT); b.px(cx-3,oy,1,1,F2)
+        b.px(cx,oy-6,1,2,(90,80,170)); b.px(cx-1,oy-4,3,1,(90,80,170)); b.px(cx-2,oy-3,5,1,(110,98,190)); b.px(cx-3,oy-2,7,1,(90,80,170)); b.px(cx-4,oy-1,9,1,(70,62,150)); b.px(cx-5,oy,11,1,(70,62,150))
+        b.px(cx-1,oy-3,1,1,F2); b.px(cx+1,oy-2,1,1,WHT); b.px(cx-3,oy-1,1,1,F2)
     elif kind=="chef":
-        b.px(cx-4,oy,9,2,WHT); b.px(cx-3,oy-3,2,3,WHT); b.px(cx,oy-4,2,4,WHT); b.px(cx+3,oy-3,2,3,WHT); b.px(cx-1,oy-3,2,2,WHT)
+        b.px(cx-5,oy,11,2,WHT); b.px(cx-4,oy-4,2,4,WHT); b.px(cx,oy-5,2,5,WHT); b.px(cx+4,oy-4,2,4,WHT); b.px(cx-2,oy-4,3,3,WHT)
     elif kind=="bandana":
-        b.px(cx-5,oy,11,2,(208,72,72)); b.px(cx-5,oy,11,1,(232,110,110)); b.px(cx+4,oy+1,1,3,(208,72,72)); b.px(cx-6,oy+1,2,1,(208,72,72))
-        b.px(cx-3,oy+1,1,1,WHT); b.px(cx+1,oy+1,1,1,WHT)
+        b.px(cx-6,oy,13,2,(208,72,72)); b.px(cx-6,oy,13,1,(232,110,110)); b.px(cx+5,oy+1,1,4,(208,72,72)); b.px(cx-7,oy+1,2,1,(208,72,72))
+        b.px(cx-3,oy+1,1,1,WHT); b.px(cx+2,oy+1,1,1,WHT)
     elif kind=="halo":
-        b.px(cx-4,oy-4,9,1,GOLD); b.px(cx-4,oy-3,1,1,GOLD); b.px(cx+4,oy-3,1,1,GOLD); b.px(cx-3,oy-3,7,1,(255,236,150))
+        b.px(cx-5,oy-5,11,1,GOLD); b.px(cx-5,oy-4,1,1,GOLD); b.px(cx+5,oy-4,1,1,GOLD); b.px(cx-4,oy-4,9,1,(255,236,150))
     elif kind=="star":
-        b.px(cx-1,oy-5,2,1,F2); b.px(cx-2,oy-4,5,1,F2); b.px(cx-3,oy-3,7,1,F2); b.px(cx-2,oy-2,2,1,F2); b.px(cx+1,oy-2,2,1,F2); b.px(cx,oy-4,1,1,WHT)
+        b.px(cx-1,oy-6,2,1,F2); b.px(cx-3,oy-5,6,1,F2); b.px(cx-4,oy-4,8,1,F2); b.px(cx-3,oy-3,2,1,F2); b.px(cx+1,oy-3,2,1,F2); b.px(cx,oy-5,1,1,WHT)
 
 def laptop(b,lx,ly,tool):
     sc=SCR; cc=CODE
     if tool=="Bash": sc=(12,18,14)
     elif tool in ("WebSearch","WebFetch"): sc=(14,27,40); cc=CODEB
-    b.px(lx,ly-5,11,6,LAPC); b.px(lx+1,ly-4,9,4,sc)
+    b.px(lx,ly-6,13,7,LAPC); b.px(lx+1,ly-5,11,5,sc)
     for q in range(2):
-        ax=lx+2+((b_step+q*3)%7); b.px(ax,ly-3+q,3,1,cc)
-    b.px(lx-1,ly+1,13,2,LAPK); b.px(lx-1,ly+1,13,1,(224,226,230))
+        ax=lx+2+((b_step+q*3)%8); b.px(ax,ly-4+q,4,1,cc)
+    b.px(lx-1,ly+1,15,2,LAPK); b.px(lx-1,ly+1,15,1,(224,226,230))
 
 def window(b,X,Y,w,h):
     b.px(X-2,Y-2,w+4,h+4,FRAME)
@@ -202,21 +225,14 @@ def window(b,X,Y,w,h):
     b.px(X+w//2-1,Y,1,h,FRAME); b.px(X,Y+h//2,w,1,FRAME)
     b.px(X-3,Y+h+1,w+6,2,SILL)
 
-def chalk(b,X,Y,w,h):
-    b.px(X-2,Y-2,w+4,h+4,CBF); b.px(X,Y,w,h,CB); b.px(X,Y,w,1,(58,72,64))
-    b.px(X+4,Y+3,w-12,2,CHALK)
-    b.px(X+4,Y+8,2,2,CH1); b.px(X+8,Y+9,w-18,1,CHALK)
-    b.px(X+4,Y+13,2,2,CH2); b.px(X+8,Y+14,w-20,1,CHALK)
-    b.px(X+w-9,Y+3,6,5,CHALK); b.px(X+w-3,Y+4,1,3,CHALK)
-
 def shelves(b,X,Y):
     cups=[(217,83,79),(98,158,200),(110,180,120),(240,190,90),(198,156,224)]
     for i in range(2):
-        yy=Y+i*8
-        b.px(X,yy,32,1,SHELF); b.px(X,yy+1,32,1,SHELFD)
-        for j in range(6):
-            cx=X+1+j*5; c=cups[(i*6+j)%5]; b.px(cx,yy-4,4,4,c); b.px(cx,yy-4,4,1,(255,255,255))
-    b.px(X+24,Y-5,8,5,LEAF); b.px(X+26,Y-2,4,3,POT)
+        yy=Y+i*9
+        b.px(X,yy,30,1,SHELF); b.px(X,yy+1,30,1,SHELFD)
+        for j in range(5):
+            cx=X+1+j*6; c=cups[(i*5+j)%5]; b.px(cx,yy-4,4,4,c); b.px(cx,yy-4,4,1,(255,255,255))
+    b.px(X+22,Y-5,8,5,LEAF); b.px(X+24,Y-2,4,3,POT)
 
 def hang(b,X):
     b.px(X+2,0,1,5,(120,98,72)); b.px(X-1,5,8,3,POT); b.px(X-1,5,8,1,(216,114,66))
@@ -226,9 +242,7 @@ def hang(b,X):
 def clock(b,X,Y):
     b.px(X,Y,12,12,CLOCKF); b.px(X+1,Y+1,10,10,CLOCKB)
     b.px(X+6,Y+2,1,4,CLOCKH); b.px(X+6,Y+6,3,1,CLOCKH)
-    sec=(b_step//5)%4
-    pts=[(6,2),(9,6),(6,9),(3,6)][sec]
-    b.px(X+pts[0],Y+pts[1],1,1,(208,80,80))
+    pts=[(6,2),(9,6),(6,9),(3,6)][(b_step//5)%4]; b.px(X+pts[0],Y+pts[1],1,1,(208,80,80))
 
 def picframe(b,X,Y,kind):
     b.px(X,Y,12,10,PIC); b.px(X+1,Y+1,10,8,PICB)
@@ -239,64 +253,58 @@ def picframe(b,X,Y,kind):
 
 def bunting(b):
     b.px(0,4,W,1,(120,108,86)); cols=[F1,F2,F3,F4,F5]; i=0
-    for fx in range(4,W-7,15):
+    for fx in range(2,W-7,15):
         c=cols[i%5]; i+=1; b.px(fx,5,7,1,c); b.px(fx+1,6,5,1,c); b.px(fx+2,7,3,1,c); b.px(fx+3,8,1,1,c)
 
 def sign(b):
-    X=92; b.px(X,0,36,10,SIGN); b.px(X,0,36,1,SIGNL); b.px(X,9,36,1,(62,38,15)); b.px(X+1,1,34,1,(116,70,34))
+    X=(W-36)//2; b.px(X,0,36,10,SIGN); b.px(X,0,36,1,SIGNL); b.px(X,9,36,1,(62,38,15)); b.px(X+1,1,34,1,(116,70,34))
     b.px(X+8,4,4,2,SIGNT); b.px(X+7,2,1,1,SIGNT); b.px(X+9,1,1,1,SIGNT); b.px(X+12,1,1,1,SIGNT); b.px(X+15,2,1,1,SIGNT)
     b.px(X+19,3,5,4,CREAM); b.px(X+24,4,1,2,CREAM); b.px(X+20,2,1,1,STEAM)
     b.px(X+28,2,2,2,F1); b.px(X+31,2,2,2,F1); b.px(X+28,4,5,1,F1); b.px(X+29,5,3,1,F1); b.px(X+30,6,1,1,F1)
 
 def station(b):
     Y=COUNTER_Y
-    b.px(2,Y-13,17,13,MACH); b.px(2,Y-13,17,1,(232,110,110)); b.px(2,Y-13,1,13,(232,110,110))
-    b.px(5,Y-10,11,4,CHROME); b.px(6,Y-9,9,2,(14,28,22)); b.px(7,Y-8,2,1,(120,200,150))
-    b.px(9,Y-4,2,3,(150,156,164)); b.px(8,Y-1,4,1,(150,156,164))
-    b.px(15,Y-12,3,2,(255,231,154) if (b_step%20<10) else (200,160,60))
-    if (b_step//5)%2==0: b.px(7,Y-15,1,2,STEAM)
-    # pastry display case
-    bx=22; b.px(bx,Y-9,20,9,PCASE); b.px(bx,Y-9,20,1,(230,242,247)); b.px(bx,Y-1,20,1,PCASEF); b.px(bx,Y-9,1,9,(170,200,210)); b.px(bx+19,Y-9,1,9,(170,200,210))
-    b.px(bx+2,Y-5,4,4,PIE); b.px(bx+2,Y-5,4,1,CREAM); b.px(bx+3,Y-2,1,1,(120,72,140))
-    b.px(bx+8,Y-4,3,3,DONUT); b.px(bx+9,Y-3,1,1,PCASE)
-    b.px(bx+13,Y-5,4,4,CAKE); b.px(bx+13,Y-5,4,1,CREAM); b.px(bx+15,Y-6,1,1,CHERRY)
+    b.px(2,Y-13,15,13,MACH); b.px(2,Y-13,15,1,(232,110,110)); b.px(2,Y-13,1,13,(232,110,110))
+    b.px(4,Y-10,10,4,CHROME); b.px(5,Y-9,8,2,(14,28,22)); b.px(6,Y-8,2,1,(120,200,150))
+    b.px(8,Y-4,2,3,(150,156,164)); b.px(7,Y-1,4,1,(150,156,164))
+    b.px(13,Y-12,3,2,(255,231,154) if (b_step%20<10) else (200,160,60))
+    if (b_step//5)%2==0: b.px(6,Y-15,1,2,STEAM)
 
 def cafe_back(b):
-    b.band(0,18,WALL[0]); b.band(18,30,WALL[1]); b.band(30,COUNTER_Y,WALL[2])
+    b.band(0,16,WALL[0]); b.band(16,28,WALL[1]); b.band(28,COUNTER_Y,WALL[2])
     bunting(b); sign(b)
-    window(b,6,10,38,18)
-    chalk(b,90,11,44,16)
-    shelves(b,176,12)
-    clock(b,54,3)
-    picframe(b,70,4,0); picframe(b,150,4,1)
-    hang(b,138)
+    window(b,3,11,26,18)
+    shelves(b,99,12)
+    clock(b,34,3)
+    picframe(b,86,4,0)
+    hang(b,70)
     station(b)
     b.px(0,COUNTER_Y-1,W,2,COUNTERT)
 
 def layout(n):
     if n<=0: return []
-    xs,xe=52,210
+    xs,xe=26,120
     if n==1: return [((xs+xe)//2,COUNTER_Y)]
     return [(int(xs+(xe-xs)*i/(n-1)),COUNTER_Y) for i in range(n)]
 
 def workstation(b,cx,P,busy,tool,hat,selected):
     pose="sleep"
     if busy>0: pose="read" if tool in ("Read","WebSearch") else "type"
-    oy=COUNTER_Y-16
-    cat(b,cx-8,oy,P,pose,b_step)
-    item(b,cx-8,oy,hat)
+    oy=COUNTER_Y-23
+    cat(b,cx-10,oy,P,pose,b_step)
+    item(b,cx-10,oy,hat)
     if selected:
-        b.px(cx-2,oy-8,5,1,SELC); b.px(cx-1,oy-7,3,1,SELC); b.px(cx,oy-6,1,1,SELC)
-    if pose!="read": laptop(b,cx-6,COUNTER_Y-1,tool)
-    b.px(cx+7,COUNTER_Y-5,3,4,MUG); b.px(cx+7,COUNTER_Y-5,3,1,(235,110,106))
-    if busy>0 and (b_step//6)%2==0: b.px(cx+8,COUNTER_Y-7,1,1,STEAM)
+        b.px(cx-2,oy-9,5,1,SELC); b.px(cx-1,oy-8,3,1,SELC); b.px(cx,oy-7,1,1,SELC)
+    if pose!="read": laptop(b,cx-7,COUNTER_Y-1,tool)
+    b.px(cx+8,COUNTER_Y-5,3,4,MUG); b.px(cx+8,COUNTER_Y-5,3,1,(235,110,106))
+    if busy>0 and (b_step//6)%2==0: b.px(cx+9,COUNTER_Y-7,1,1,STEAM)
 
 def counter_front(b, agents, pos, sel, mode, namebuf):
     b.px(0,COUNTER_Y+1,W,H-(COUNTER_Y+1),COUNTER)
     b.px(0,COUNTER_Y+1,W,1,(168,112,66))
-    for x in range(0,W,20): b.px(x,COUNTER_Y+2,1,H-(COUNTER_Y+2),COUNTERD)
+    for x in range(0,W,18): b.px(x,COUNTER_Y+2,1,H-(COUNTER_Y+2),COUNTERD)
     b.px(0,H-2,W,2,COUNTERE)
-    ny=COUNTER_Y+5
+    ny=COUNTER_Y+6
     n=len(pos); slotw=(pos[1][0]-pos[0][0]) if n>1 else W
     maxch=max(3,min(8,(slotw-2)//4))
     for i,(cx,_) in enumerate(pos):
@@ -317,6 +325,135 @@ def draw_office(b, agents, sel, mode="normal", namebuf=""):
     for i,(cx,_) in enumerate(pos):
         a=agents[i]; workstation(b,cx,a["pal"],a["busy"],a["tool"],a["hat"], i==sel)
     counter_front(b, agents, pos, sel, mode, namebuf)
+
+# ---------- render: half-block, auto-fit (olcekli cizim) ----------
+QUAD={0:" ",8:"\u2598",4:"\u259d",2:"\u2596",1:"\u2597",12:"\u2580",3:"\u2584",10:"\u258c",5:"\u2590",9:"\u259a",6:"\u259e",14:"\u259b",13:"\u259c",11:"\u2599",7:"\u259f",15:"\u2588"}
+def _d2(a,b): return (a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2
+def _pick2(ps):
+    uniq=[]
+    for c in ps:
+        if c not in uniq: uniq.append(c)
+    if len(uniq)==1: return uniq[0],uniq[0]
+    bd=-1; best=(uniq[0],uniq[1])
+    for i in range(len(uniq)):
+        for j in range(i+1,len(uniq)):
+            dd=_d2(uniq[i],uniq[j])
+            if dd>bd: bd=dd; best=(uniq[i],uniq[j])
+    a,bb=best
+    # brighter is foreground for nicer contrast
+    if (a[0]+a[1]+a[2])>(bb[0]+bb[1]+bb[2]): a,bb=bb,a
+    return a,bb
+def render_quadrant(buf):
+    cols=buf.w//2; rows=buf.h//2; out=[]
+    for cy in range(rows):
+        r0=buf.d[cy*2]; r1=buf.d[cy*2+1]; line=[]
+        for cx in range(cols):
+            x0=cx*2; x1=x0+1
+            tl=r0[x0]; tr=r0[x1]; bl=r1[x0]; br=r1[x1]
+            if tl==tr==bl==br:
+                line.append("\x1b[38;2;%d;%d;%dm\u2588"%tl)
+            else:
+                bg,fg=_pick2((tl,tr,bl,br)); bits=0
+                for p,bv in ((tl,8),(tr,4),(bl,2),(br,1)):
+                    if _d2(p,fg)<=_d2(p,bg): bits|=bv
+                line.append("\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm%s"%(fg[0],fg[1],fg[2],bg[0],bg[1],bg[2],QUAD[bits]))
+        out.append("".join(line)+"\x1b[0m")
+    return out
+
+def _sextchar(v):
+    if v==0: return " "
+    if v==63: return "\u2588"
+    if v==21: return "\u258c"
+    if v==42: return "\u2590"
+    o=(v-1)-(1 if v>21 else 0)-(1 if v>42 else 0)
+    return chr(0x1FB00+o)
+def render_sextant(buf):
+    cols=buf.w//2; rows=buf.h//3; out=[]
+    for cy in range(rows):
+        ya=buf.d[cy*3]; yb=buf.d[cy*3+1]; yc=buf.d[cy*3+2]; line=[]
+        for cx in range(cols):
+            x0=cx*2; x1=x0+1
+            p=(ya[x0],ya[x1],yb[x0],yb[x1],yc[x0],yc[x1])
+            if p[0]==p[1]==p[2]==p[3]==p[4]==p[5]:
+                line.append("\x1b[38;2;%d;%d;%dm\u2588"%p[0])
+            else:
+                bg,fg=_pick2(p); v=0
+                for pp,bv in ((p[0],1),(p[1],2),(p[2],4),(p[3],8),(p[4],16),(p[5],32)):
+                    if _d2(pp,fg)<=_d2(pp,bg): v|=bv
+                line.append("\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm%s"%(fg[0],fg[1],fg[2],bg[0],bg[1],bg[2],_sextchar(v)))
+        out.append("".join(line)+"\x1b[0m")
+    return out
+
+def render_terminal(b):
+    HALF="\u2580"; rows=[]
+    for ry in range(0,b.h,2):
+        top=b.d[ry]; bot=b.d[ry+1] if ry+1<b.h else top; line=[]
+        for x in range(b.w):
+            tr,tg,tb=top[x]; br,bg,bb=bot[x]
+            line.append("\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm%s"%(tr,tg,tb,br,bg,bb,HALF))
+        rows.append("".join(line)+"\x1b[0m")
+    return rows
+
+class SC:
+    def __init__(s,buf,sc,ox,oy): s.b=buf; s.s=sc; s.ox=ox; s.oy=oy
+    def px(s,x,y,w,h,c):
+        if c is None: return
+        k=s.s; x0=int(x*k+0.5)+s.ox; y0=int(y*k+0.5)+s.oy
+        x1=int((x+w)*k+0.5)+s.ox; y1=int((y+h)*k+0.5)+s.oy
+        if x1<=x0: x1=x0+1
+        if y1<=y0: y1=y0+1
+        s.b.px(x0,y0,x1-x0,y1-y0,c)
+    def band(s,y0,y1,c): s.px(0,y0,W,y1-y0,c)
+
+def draw_edit_overlay(buf,namebuf,BW,BH):
+    txt="AD: "+namebuf
+    tw1=text_w(txt); fs=max(2,BW//90)
+    fs=min(fs,max(1,(BW-16)//max(1,tw1)))
+    cur=(b_step//6)%2==0
+    bw=tw1*fs+(2*fs if cur else 0)
+    bx=(BW-bw)//2; by=(BH-5*fs)//2; pad=3*fs//2+2
+    buf.px(bx-pad,by-pad,bw+2*pad,5*fs+2*pad,(38,28,20))
+    buf.px(bx-pad,by-pad,bw+2*pad,2,SELC)
+    buf.px(bx-pad,by+5*fs+pad-2,bw+2*pad,2,SELC)
+    draw_text_scaled(buf,bx,by,txt,SELC,fs)
+    if cur: buf.px(bx+tw1*fs+1,by,2*fs,5*fs,SELC)
+
+BLOCKS="quad"
+def _dims(cols,rows):
+    if BLOCKS=="sext": return cols*2, rows*3
+    if BLOCKS=="half": return cols, rows*2
+    return cols*2, rows*2
+def build_native(agents,sel,mode,namebuf,cols,rows):
+    BW,BH=_dims(cols,rows)
+    buf=Buf(BW,BH)
+    s=min(BW/float(W), BH/float(H))
+    ox=(BW-int(W*s+0.5))//2; oy=(BH-int(H*s+0.5))//2
+    cy=max(0,oy+int(COUNTER_Y*s+0.5))
+    buf.band(0,cy,WALL[0]); buf.band(cy,BH,COUNTER)
+    c=SC(buf,s,ox,oy)
+    draw_office(c,agents,sel,mode,namebuf)
+    if mode=="name": draw_edit_overlay(buf,namebuf,BW,BH)
+    return buf
+
+def render_native(agents,sel,mode,namebuf,cols,rows):
+    if cols<8 or rows<4: return "\x1b[H\x1b[2J  pencere cok kucuk"
+    buf=build_native(agents,sel,mode,namebuf,cols,rows)
+    if BLOCKS=="sext": body=render_sextant(buf)
+    elif BLOCKS=="half": body=render_terminal(buf)
+    else: body=render_quadrant(buf)
+    return "\x1b[H"+"\n".join(body)
+
+def render_ascii(b):
+    ramp=" .:-=+*#%@"; rows=[]
+    for y in range(b.h):
+        rows.append("".join(ramp[min(9,(r*299+g*587+bl*114)//1000*10//256)] for r,g,bl in b.d[y]))
+    return rows
+def render_png(b,path,scale=6):
+    from PIL import Image
+    img=Image.new("RGB",(b.w,b.h)); px=img.load()
+    for y in range(b.h):
+        for x in range(b.w): px[x,y]=b.d[y][x]
+    img.resize((b.w*scale,b.h*scale),Image.NEAREST).save(path)
 
 # ---------- store ----------
 class Store:
@@ -390,65 +527,13 @@ def resolve(agents,ovr):
         a2=dict(a); a2["name"]=name; a2["pal"]=PAL[ci%len(PAL)]; a2["ci"]=ci%len(PAL); a2["hat"]=hat; out.append(a2)
     return out
 
-DSC=[(3,0),(2,1),(3,3),(3,5),(3.5,8),(3,2)]; DTOT=sum(x[0] for x in DSC); DTOOLS=["Edit","Bash","WebSearch","Read","Write"]
+DSC=[(3,0),(2,1),(3,2),(3,3),(3.5,4),(3,2)]; DTOT=sum(x[0] for x in DSC); DTOOLS=["Edit","Bash","WebSearch","Read","Write"]
 def demo_agents(now):
     a=now%DTOT; acc=0; n=0
     for d,nn in DSC:
         acc+=d
         if a<acc: n=nn; break
     return [{"slot":i,"busy":0 if (int(now/1.3+i)%5==0) else 3+(i%3),"tool":None if (int(now/1.3+i)%5==0) else DTOOLS[(i+int(now/1.7))%len(DTOOLS)]} for i in range(n)]
-
-def render_terminal(b):
-    HALF="\u2580"; rows=[]
-    for ry in range(0,b.h,2):
-        top=b.d[ry]; bot=b.d[ry+1] if ry+1<b.h else top; line=[]
-        for x in range(b.w):
-            tr,tg,tb=top[x]; br,bg,bb=bot[x]
-            line.append("\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm%s"%(tr,tg,tb,br,bg,bb,HALF))
-        rows.append("".join(line)+"\x1b[0m")
-    return rows
-def resample(src,dw,dh):
-    out=Buf(dw,dh); sw=src.w; sh=src.h
-    for y in range(dh):
-        sy=y*sh//dh
-        if sy>=sh: sy=sh-1
-        srow=src.d[sy]; drow=out.d[y]
-        for x in range(dw):
-            sx=x*sw//dw
-            if sx>=sw: sx=sw-1
-            drow[x]=srow[sx]
-    return out
-
-def render_fit(scene,cols,rows):
-    tw=cols; th=rows*2
-    if tw<8 or th<4:
-        return "\x1b[H\x1b[2J  pencere cok kucuk"
-    f=min(tw/scene.w, th/scene.h); f=max(0.15,min(f,8.0))
-    dw=int(scene.w*f); dh=int(scene.h*f)
-    if dw<16: dw=min(tw,16)
-    if dh<8: dh=min(th,8)
-    if dw>tw: dw=tw
-    if dh>th: dh=th
-    sc=resample(scene,dw,dh)
-    body=render_terminal(sc); rh=len(body)
-    left=max(0,(cols-dw)//2); right=cols-dw-left
-    top=min(max(0,(rows-rh)//2), max(0,rows-rh))
-    blank=" "*cols; lp=" "*left; rp=" "*right
-    lines=[blank]*top + [lp+r+rp for r in body]
-    while len(lines)<rows: lines.append(blank)
-    return "\x1b[H"+"\n".join(lines[:rows])
-
-def render_ascii(b):
-    ramp=" .:-=+*#%@"; rows=[]
-    for y in range(b.h):
-        rows.append("".join(ramp[min(9,(r*299+g*587+bl*114)//1000*10//256)] for r,g,bl in b.d[y]))
-    return rows
-def render_png(b,path,scale=6):
-    from PIL import Image
-    img=Image.new("RGB",(b.w,b.h)); px=img.load()
-    for y in range(b.h):
-        for x in range(b.w): px[x,y]=b.d[y][x]
-    img.resize((b.w*scale,b.h*scale),Image.NEAREST).save(path)
 
 # ---------- hooks ----------
 HOOK_CMD=('mkdir -p "$HOME/.neko-hq" && '
@@ -504,7 +589,9 @@ def main():
     ap.add_argument("--frames",type=int,default=0); ap.add_argument("--ascii",action="store_true")
     ap.add_argument("--install-hooks",action="store_true"); ap.add_argument("--uninstall-hooks",action="store_true")
     ap.add_argument("--no-install",action="store_true")
+    ap.add_argument("--blocks",choices=["half","quad","sext"],default="quad")
     a=ap.parse_args()
+    global BLOCKS; BLOCKS=a.blocks
     if a.install_hooks: install_hooks(); return
     if a.uninstall_hooks: uninstall_hooks(); return
     os.makedirs(APP_DIR,exist_ok=True)
@@ -517,8 +604,7 @@ def main():
         if a.ascii: print("\n".join(render_ascii(buf))); return
         for fr in range(a.frames):
             b_step=18+fr; ags=resolve(demo_agents(time.time()+fr),ovr)
-            buf=Buf(W,H); draw_office(buf,ags,0)
-            sys.stdout.write("\x1b[H"+"\n".join(render_terminal(buf))+"\n")
+            sys.stdout.write(render_native(ags,0,"normal","",W,NEED_ROWS)+"\n")
         return
 
     if not a.no_install:
@@ -539,7 +625,6 @@ def main():
             ags=resolve(ags_raw,ovr)
             if ags and sel>=len(ags): sel=len(ags)-1
             if sel<0: sel=0
-            # ara sira sapka degistir (manuel olmayanlar)
             for a2 in ags:
                 slot=a2["slot"]
                 if not ovr.get(str(slot),{}).get("hat") and random.random()<0.004:
@@ -578,9 +663,8 @@ def main():
                             if ags:
                                 o=ovr.setdefault(str(ags[sel]["slot"]),{}); cur=o.get("hat") or ags[sel]["hat"]
                                 o["hat"]=ALL_HATS[(ALL_HATS.index(cur)+1)%len(ALL_HATS)] if cur in ALL_HATS else ALL_HATS[0]; save_ovr(ovr)
-            buf=Buf(W,H); draw_office(buf,ags,sel,mode,namebuf)
             sz=shutil.get_terminal_size((W,NEED_ROWS)); cols=sz.columns; rows=sz.lines
-            sys.stdout.write(render_fit(buf,cols,rows))
+            sys.stdout.write(render_native(ags,sel,mode,namebuf,cols,rows))
             sys.stdout.flush(); b_step+=1
             if not istty: break
             time.sleep(0.1)
