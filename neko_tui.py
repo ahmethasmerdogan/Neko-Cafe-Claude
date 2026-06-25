@@ -15,7 +15,7 @@ try:
 except Exception:
     HAVE_TTY=False
 
-W, H = 220, 48
+W, H = 150, 48
 COUNTER_Y = 34
 HOME=os.path.expanduser("~"); APP_DIR=os.path.join(HOME,".neko-hq")
 LOG=os.path.join(APP_DIR,"activity.log"); OVR_FILE=os.path.join(APP_DIR,"cats.json")
