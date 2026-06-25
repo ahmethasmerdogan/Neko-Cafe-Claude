@@ -407,6 +407,37 @@ def render_terminal(b):
             line.append("\x1b[38;2;%d;%d;%d;48;2;%d;%d;%dm%s"%(tr,tg,tb,br,bg,bb,HALF))
         rows.append("".join(line)+"\x1b[0m")
     return rows
+def resample(src,dw,dh):
+    out=Buf(dw,dh); sw=src.w; sh=src.h
+    for y in range(dh):
+        sy=y*sh//dh
+        if sy>=sh: sy=sh-1
+        srow=src.d[sy]; drow=out.d[y]
+        for x in range(dw):
+            sx=x*sw//dw
+            if sx>=sw: sx=sw-1
+            drow[x]=srow[sx]
+    return out
+
+def render_fit(scene,cols,rows):
+    tw=cols; th=rows*2
+    if tw<8 or th<4:
+        return "\x1b[H\x1b[2J  pencere cok kucuk"
+    f=min(tw/scene.w, th/scene.h); f=max(0.15,min(f,8.0))
+    dw=int(scene.w*f); dh=int(scene.h*f)
+    if dw<16: dw=min(tw,16)
+    if dh<8: dh=min(th,8)
+    if dw>tw: dw=tw
+    if dh>th: dh=th
+    sc=resample(scene,dw,dh)
+    body=render_terminal(sc); rh=len(body)
+    left=max(0,(cols-dw)//2); right=cols-dw-left
+    top=min(max(0,(rows-rh)//2), max(0,rows-rh))
+    blank=" "*cols; lp=" "*left; rp=" "*right
+    lines=[blank]*top + [lp+r+rp for r in body]
+    while len(lines)<rows: lines.append(blank)
+    return "\x1b[H"+"\n".join(lines[:rows])
+
 def render_ascii(b):
     ramp=" .:-=+*#%@"; rows=[]
     for y in range(b.h):
@@ -456,12 +487,6 @@ def uninstall_hooks():
     print("• Hook'lar kaldirildi (%d)."%rm)
 
 NEED_ROWS=H//2
-def screen_or_msg(b,cols,rows):
-    if cols<W or rows<NEED_ROWS:
-        return "\n".join(["","  NEKO HQ — pencereyi buyut:","  en az %d sutun x %d satir."%(W,NEED_ROWS),
-                          "  (su an %d x %d)  ·  Warp'ta pane'i genislet."%(cols,rows)]), True
-    return "\x1b[H"+"\n".join(render_terminal(b)), False
-
 def parse_keys(buf):
     keys=[]; i=0
     while i<len(buf):
@@ -555,8 +580,7 @@ def main():
                                 o["hat"]=ALL_HATS[(ALL_HATS.index(cur)+1)%len(ALL_HATS)] if cur in ALL_HATS else ALL_HATS[0]; save_ovr(ovr)
             buf=Buf(W,H); draw_office(buf,ags,sel,mode,namebuf)
             sz=shutil.get_terminal_size((W,NEED_ROWS)); cols=sz.columns; rows=sz.lines
-            out,small=screen_or_msg(buf,cols,rows)
-            sys.stdout.write(("\x1b[H\x1b[2J"+out) if small else out)
+            sys.stdout.write(render_fit(buf,cols,rows))
             sys.stdout.flush(); b_step+=1
             if not istty: break
             time.sleep(0.1)
